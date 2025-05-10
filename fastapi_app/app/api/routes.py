@@ -1,4 +1,11 @@
 from fastapi import APIRouter, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile
+from fastapi.responses import JSONResponse
+from typing import Optional, Literal
+from fastapi.responses import StreamingResponse
+from io import BytesIO
+
+
 from schemas.encryption import (
     EncryptionRequest,
     EncryptionResponse,
@@ -17,55 +24,149 @@ router = APIRouter()
 encryption_service = EncryptionService()
 image_service = ImageEncryptionService()
 
-@router.post("/encrypt", response_model=EncryptionResponse)
-async def encrypt_file(request: EncryptionRequest):
-    try:
-        # Decode base64 file content
-        file_content = base64.b64decode(request.file_content)
-        
-        # Process based on algorithm
-        if request.algorithm == "AES-GCM":
-            if request.operation == "encrypt":
-                processed_data = encryption_service.aes_gcm_encrypt(
-                    file_content, request.password, request.kdf_type, **request.kdf_params
-                )
-            else:
-                processed_data = encryption_service.aes_gcm_decrypt(
-                    file_content, request.password, request.kdf_type, **request.kdf_params
-                )
-        elif request.algorithm == "ChaCha20Poly1305":
-            if request.operation == "encrypt":
-                processed_data = encryption_service.chacha20_encrypt(
-                    file_content, request.password, request.kdf_type, **request.kdf_params
-                )
-            else:
-                processed_data = encryption_service.chacha20_decrypt(
-                    file_content, request.password, request.kdf_type, **request.kdf_params
-                )
-        elif request.algorithm == "Camellia-GCM":
-            if request.operation == "encrypt":
-                processed_data = encryption_service.camellia_gcm_encrypt(
-                    file_content, request.password, request.kdf_type, **request.kdf_params
-                )
-            else:
-                processed_data = encryption_service.camellia_gcm_decrypt(
-                    file_content, request.password, request.kdf_type, **request.kdf_params
-                )
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported algorithm")
+@router.post("/encrypt")
+async def encrypt_file(    
+    file: UploadFile = File(...),
+    operation: Literal["encrypt", "decrypt"] = Form(...),
+    algorithm: str = Form(...),
 
-        # Encode processed data as base64
-        processed_content = base64.b64encode(processed_data).decode('utf-8')
-        
-        # Determine filename and mime type
-        filename = f"{request.operation}ed_file"
-        mime_type = "application/octet-stream"
+    # Common AES/Camellia/ChaCha fields
+    password: Optional[str] = Form(None),
+    keySize: Optional[int] = Form(None),
+    mode: Optional[str] = Form(None),
+    iv: Optional[str] = Form(None),
+    nonce: Optional[str] = Form(None),  # for ChaCha20
 
-        return EncryptionResponse(
-            processed_content=processed_content,
-            filename=filename,
-            mime_type=mime_type
+    # RSA keys
+    publicKey: Optional[str] = Form(None),
+    privateKey: Optional[str] = Form(None),
+
+    # 3DES-specific
+    keyOption: Optional[str] = Form(None),
+    key1: Optional[str] = Form(None),
+    key2: Optional[str] = Form(None),
+    key3: Optional[str] = Form(None),
+
+    # Partial encryption
+    partialEncryption: Optional[bool] = Form(False),
+    selectedTextStart: Optional[int] = Form(None)):
+    
+    text = await file.read()
+    if operation == "encrypt":
+    
+        output = encryption_service.aes_gcm_encrypt(
+            text,
+            password,
+            keySize,
         )
+            
+        import base64
+
+        return {
+            "filename": f"encrypted_{file.filename}",
+            "data": base64.b64encode(output).decode(),
+            "message": "Success"
+        }
+                
+            
+    else :
+        print(type(text))
+        print(text)
+
+        #from bytes to base664
+        b64  = base64.b64encode(text)
+        b64_string = b64.decode('utf-8')
+        print(b64)
+        print(b64_string)
+        
+        
+        
+        
+        
+        
+        
+        
+    
+"""    try:
+        # from base64 to bytes
+            raw = base64.b64decode(request.fileContentsBase64)
+        
+    
+            alg = request.algorithm.lower()
+            if request.operation == "encrypt":
+                if alg == "aes" : 
+                    if request.mode == "gcm":
+                        out = encryption_service.aes_gcm_encrypt(raw, request.password, request.keySize, request.iv)
+                    elif request.mode == "ctr":
+                        out = encryption_service.aes_ctr_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "cbc":
+                        out = encryption_service.aes_cbc_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ecb":
+                        out = encryption_service.aes_ecb_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                elif alg == "chacha20":
+                    if request.mode == "chacha20":
+                        out = encryption_service.chacha20_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "chacha20-poly1305":
+                        out = encryption_service.chacha20_poly1305_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                elif alg == "camellia":
+                    if request.mode == "cbc":
+                        out = encryption_service.camellia_cbc_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ecb":
+                        out = encryption_service.camellia_ecb_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ctr":
+                        out = encryption_service.camellia_ctr_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                elif alg == "rsa":
+                    if request.publicKey:
+                        out = encryption_service.rsa_encrypt(request.fileContentsBase64, request.publicKey)
+                    else:
+                        raise ValueError("Public key is required for RSA encryption")
+                elif alg == "3des":
+                    if request.mode == "cbc":
+                        out = encryption_service.triple_des_cbc_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ecb":
+                        out = encryption_service.triple_des_ecb_encrypt(request.fileContentsBase64, request.password, request.keySize)
+                        
+                        
+                        
+                        
+            elif request.operation == "decrypt":
+                if alg == "aes":
+                    if request.mode == "gcm":
+                        out = encryption_service.aes_gcm_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ctr":
+                        out = encryption_service.aes_ctr_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "cbc":
+                        out = encryption_service.aes_cbc_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ecb":
+                        out = encryption_service.aes_ecb_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                elif alg == "chacha20":
+                    if request.mode == "chacha20":
+                        out = encryption_service.chacha20_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "chacha20-poly1305":
+                        out = encryption_service.chacha20_poly1305_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                elif alg == "camellia":
+                    if request.mode == "cbc":
+                        out = encryption_service.camellia_cbc_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ecb":
+                        out = encryption_service.camellia_ecb_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ctr":
+                        out = encryption_service.camellia_ctr_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                elif alg == "rsa":
+                    if request.privateKey:
+                        out = encryption_service.rsa_decrypt(request.fileContentsBase64, request.privateKey)
+                    else:
+                        raise ValueError("Private key is required for RSA decryption")
+                elif alg == "3des":
+                    if request.mode == "cbc":
+                        out = encryption_service.triple_des_cbc_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                    elif request.mode == "ecb":
+                        out = encryption_service.triple_des_ecb_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                
+                
+            else:
+                raise ValueError("Unsupported algorithm or missing keys")
+            
+            return {"success": True, "message": "Encrypted successfully", "processedSelection": out}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -168,4 +269,4 @@ async def auto_decrypt_image(request: AutoDecryptImageRequest):
     return ImageEncryptionResponse(
         processed_image=processed_image,
         filename="decrypted_image.png"
-    )
+    )"""

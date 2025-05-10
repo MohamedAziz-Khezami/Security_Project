@@ -1,17 +1,31 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
+from fastapi import UploadFile, File, Form
 
 class EncryptionRequest(BaseModel):
-    file_content: str = Field(..., description="Base64 encoded file content")
-    password: str = Field(..., description="Password for encryption/decryption")
-    algorithm: Literal["AES-GCM", "ChaCha20Poly1305", "Camellia-GCM", "RSA"] = Field(..., description="Encryption algorithm to use")
-    kdf_type: Optional[Literal["PBKDF2", "Scrypt"]] = Field(None, description="Key derivation function type")
-    kdf_params: Optional[dict] = Field(None, description="KDF parameters")
-    operation: Literal["encrypt", "decrypt"] = Field(..., description="Operation to perform")
-    partial: Optional[bool] = Field(False, description="Whether to perform partial encryption/decryption")
-    partial_text: Optional[str] = Field(None, description="Text to encrypt/decrypt in partial mode")
-    partial_scope: Optional[Literal["First Occurrence", "All Occurrences"]] = Field(None, description="Scope for partial encryption")
-
+        file: UploadFile = File(...),
+        operation: str = Form(...),
+        algorithm: str = Form(...),
+        # Common fields
+        password: Optional[str] = Form(None),
+        mode: Optional[str] = Form(None),
+        iv: Optional[str] = Form(None),
+        # AES & Camellia use keySize
+        key_size: Optional[int] = Form(None, alias="keySize"),
+        # ChaCha20 uses nonce
+        nonce: Optional[str] = Form(None),
+        # RSA uses either publicKey or privateKey
+        public_key: Optional[str] = Form(None, alias="publicKey"),
+        private_key: Optional[str] = Form(None, alias="privateKey"),
+        # 3DES-specific keys and options
+        key_option: Optional[str] = Form(None, alias="keyOption"),
+        key1: Optional[str] = Form(None),
+        key2: Optional[str] = Form(None),
+        key3: Optional[str] = Form(None),
+        # Partial encryption flags
+        partial_encryption: bool = Form(False, alias="partialEncryption"),
+        selected_text_start: Optional[int] = Form(None, alias="selectedTextStart"),
+        selected_text_end: Optional[int] = Form(None, alias="selectedTextEnd"),
 class EncryptionResponse(BaseModel):
     processed_content: str = Field(..., description="Base64 encoded processed file content")
     filename: str = Field(..., description="Name of the processed file")
