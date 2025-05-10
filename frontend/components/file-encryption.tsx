@@ -39,9 +39,7 @@ export default function FileEncryption() {
   const [chachaMode, setChachaMode] = useState("chacha20-poly1305")
   const [chachaNonce, setChachaNonce] = useState("")
 
-  const [camelliaKeySize, setCamelliaKeySize] = useState("256")
-  const [camelliaMode, setCamelliaMode] = useState("cbc")
-  const [camelliaIv, setCamelliaIv] = useState("")
+
 
   const [rsaKeyType, setRsaKeyType] = useState<"generate" | "upload" | "paste">("generate")
   const [rsaPublicKey, setRsaPublicKey] = useState("")
@@ -71,9 +69,8 @@ export default function FileEncryption() {
       setAesIv("")
     } else if (algorithm === "chacha20") {
       setChachaNonce("")
-    } else if (algorithm === "camellia") {
-      setCamelliaIv("")
-    } else if (algorithm === "rsa") {
+    } 
+     else if (algorithm === "rsa") {
       setRsaPublicKey("")
       setRsaPrivateKey("")
       setRsaPublicKeyFile(null)
@@ -179,6 +176,13 @@ export default function FileEncryption() {
     return result
   }
 
+  const generateTripleDesKeys = () => {
+    // Generate 8 bytes (64 bits) for each key
+    setTripleDesKey1(generateRandomHex(16))  // 8 bytes = 16 hex characters
+    setTripleDesKey2(generateRandomHex(16))
+    setTripleDesKey3(generateRandomHex(16))
+  }
+
   const generateIV = () => {
     if (algorithm === "aes") {
       if (aesMode === "gcm" || aesMode === "ctr") {
@@ -188,62 +192,84 @@ export default function FileEncryption() {
       // 16 bytes (128 bits) for AES
       else setAesIv(generateRandomHex(32))
     } else if (algorithm === "chacha20") {
-      // 12 bytes (96 bits) for ChaCha20-Poly1305
-      setChachaNonce(generateRandomHex(24))
-    } else if (algorithm === "camellia") {
-      // 16 bytes (128 bits) for Camellia
-      setCamelliaIv(generateRandomHex(32))
+      if (chachaMode === "chacha20-poly1305") {
+        // 12 bytes (96 bits) for ChaCha20-Poly1305
+        setChachaNonce(generateRandomHex(24))
+      } else {
+        // 16 bytes (128 bits) for original ChaCha20
+        setChachaNonce(generateRandomHex(32))
+      }
     } else if (algorithm === "3des") {
       // 8 bytes (64 bits) for 3DES
       setTripleDesIv(generateRandomHex(16))
     }
   }
 
-  const simulateRsaKeyGeneration = () => {
+  const downloadRSAKeys = (publicKey: string, privateKey: string) => {
+    // Download public key
+    const publicKeyBlob = new Blob([publicKey], { type: 'text/plain' });
+    const publicKeyUrl = URL.createObjectURL(publicKeyBlob);
+    const publicKeyLink = document.createElement('a');
+    publicKeyLink.href = publicKeyUrl;
+    publicKeyLink.download = 'public_key.pem';
+    document.body.appendChild(publicKeyLink);
+    publicKeyLink.click();
+    document.body.removeChild(publicKeyLink);
+    URL.revokeObjectURL(publicKeyUrl);
+
+    // Download private key
+    const privateKeyBlob = new Blob([privateKey], { type: 'text/plain' });
+    const privateKeyUrl = URL.createObjectURL(privateKeyBlob);
+    const privateKeyLink = document.createElement('a');
+    privateKeyLink.href = privateKeyUrl;
+    privateKeyLink.download = 'private_key.pem';
+    document.body.appendChild(privateKeyLink);
+    privateKeyLink.click();
+    document.body.removeChild(privateKeyLink);
+    URL.revokeObjectURL(privateKeyUrl);
+  }
+
+  const simulateRsaKeyGeneration = async () => {
     setIsProcessing(true)
+    setResult(null)
 
-    setTimeout(() => {
-      setRsaPublicKey(`-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3Tz2mr7SZiAMfQyuvBjM
-9OiJjRazXBZ1BjP5CE/Wm/Rr500PRK+Lh9x5eJPo5CAZ3/ANBE0sTK0ZsDGMak2m
-1g7oruI3dY3VHqIxFTz0Ta1d+NAjwnLe4nOb7/eEJbDPkk05ShhBrJGBKKxb8n10
-4o/5p8HAsZPdzbFMIyNjJzBM2o5y5A13wiLitEO7nco2WfyYkQzaxCw0AwzlkVHi
-IyCuaF4wj571pSzkv6sv+4IDMbT/XpCo8L6wTarzrywnQsh+etLD6FtTjYbbrvZ8
-RQM1tlKdoMHg2qxraAV++HXDhmrEcJh6ty5c8v4eKxiVoB07kuRHM0rEvjCCnrNt
-hwIDAQAB
------END PUBLIC KEY-----`)
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/generate-rsa-keys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          keySize: parseInt(rsaKeySize)
+        })
+      });
 
-      setRsaPrivateKey(`-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDdPPaavtJmIAx9
-DK68GMz06ImNFrNcFnUGM/kIT9ab9GvnTQ9Er4uH3Hl4k+jkIBnf8A0ETSxMrRmw
-MYxqTabWDuiu4jd1jdUeojEVPPRNrV340CPCct7ic5vv94QlsM+STTlKGEGskYEo
-rFvyfXTij/mnwcCxk93NsUwjI2MnMEzajnLkDXfCIuK0Q7udyjZZ/JiRDNrELDQD
-DOWRUeIjIK5oXjCPnvWlLOS/qy/7ggMxtP9ekKjwvrBNqvOvLCdCyH560sPoW1ON
-htuu9nxFAzW2Up2gweDarGtoBX74dcOGasRwmHq3Llzy/h4rGJWgHTuS5EczSsS+
-MIKes22HAgMBAAECggEADj8DNbfr/7pHwGPEEyhA5dL8/wfaHlRxe1wS+5lWmguL
-ZAZ0+rgNVvt9JmAhDfzdMwImvpJRjVpwR7TXjr5/dxJVVUd/XEJLXHKLw1Rqc8eu
-S/ZHNzJjQHFLV4592noy0jQOv8K9FjWYHaLBnHNxqQQM+hx/FwoUzklTIFE+0Idm
-TFeyepBH5YediPXGz9TtxX8GC7+Eo0gZFMYHxpw/JNt4xRCTnEj+ZKI9NjC+SiVe
-3G/lFhqmsySKMZIzKi/jJK3AS5JmzVnz3V0iaWgMRQAqR+T+n0KEcYjP2HiLKI/P
-6+BBnKuDBZmEMcqIKnOIlEEw3JgwXgBHv3+zk5+dAQKBgQD0Ij8aNvmMEBzYzcPd
-thOyRlx/x2yL/L2ZxiAUqkrQVl5GWwZlj5fqAHpy/Q1lCnIpbSK5bYe+9pTqDMJG
-sbFLB0I1v1U3fxnFYbEhOJnMn7tLAT5H8G/JkF7KdlRYTvKDq4W6+EOePJ1mDMRR
-thAcODxQ0jVLqN8A3xYP+pfYBwKBgQDoEYQBhvVJWZlnZeP0LmT3yw+zZKYrYPH8
-kAIQXEgFqSN2lvVYnlJZvKHyuGHwiNGIHUoKQ6PK6tE6zrxnJbLR8jV4QFcBVE1V
-fNxGFrZHGiZ3SJRoJYt3LYaxhwLF7MlgXt/0FoTxYBp9JiGNQUTHQgiRjKvdQUBw
-iBPtUxbHgQKBgQCwFyjcLAfA5uJDZ1nYhFIOvMbwVLcGtIFPnAc4KeRHMOdpHLJG
-tJ7UZ948Z5JkpbfHNd0EAKLGiWOGTWQg8iBjWTI6UJQl1W3ks1CSXlqVeZFQM4LF
-Ft1Qx+1EXcm8xyNQgFwIxz9h8p5QBpEbGS5xq1xEFkNpb+qP3sSuuqYQlwKBgA5o
-xNNRUYQf6E7Oj/xXrGs3N5u5C8QYmyITHEXUQxcKgZYd9Q8WuZOuwmEpHEhM0YKS
-1Hy/RGI9zdpU/bJhpOQCRqJG2EFyTaRHDi8XHgJ8erpqNKBzlgIjmjjgBUkdYnWg
-lKko0v8YM4oEo5KJxGCJmyVJxl7xZOQNE4+Wd5mBAoGBAIRRXCyWHPBcWrfP1GKt
-Jllcbe5o2b7tYDW+SyLG0FkdNUdm7YwheGzA+3m8OlFgLXrQVr/uXl4F9I0NNLjt
-/H3bFrH6Z2rQxjJ2mKFPQFwJm1XwVXuPJGYcGOhiMGGAGmF6XNdtAXQHWVwQZKrM
-Hm8MXIp/mH4K1UYdZ0zZQOXG
------END PRIVATE KEY-----`)
+      if (!response.ok) {
+        throw new Error('Failed to generate RSA keys');
+      }
 
-      setIsProcessing(false)
-    }, 2000)
+      const data = await response.json();
+      
+      setRsaPublicKey(data.public_key);
+      setRsaPrivateKey(data.private_key);
+      
+      // Download the keys automatically
+      downloadRSAKeys(data.public_key, data.private_key);
+      
+      setResult({
+        success: true,
+        message: "RSA key pair generated and downloaded successfully. Make sure to save your private key securely."
+      });
+
+    } catch (error) {
+      console.error('Error generating RSA keys:', error);
+      setResult({
+        success: false,
+        message: "Failed to generate RSA keys. Please try again."
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -346,20 +372,18 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
         formData.append("password", password)
         formData.append("mode", chachaMode)
         formData.append("nonce", chachaNonce)
-      } else if (algorithm === "camellia") {
-        formData.append("password", password)
-        formData.append("keySize", camelliaKeySize)
-        formData.append("mode", camelliaMode)
-        if (camelliaMode !== "ecb") {
-          formData.append("iv", camelliaIv)
-        }
-      } else if (algorithm === "rsa") {
+      } 
+        
+       else if (algorithm === "rsa") {
         if (operation === "encrypt") {
           formData.append("publicKey", rsaPublicKey)
         } else {
           formData.append("privateKey", rsaPrivateKey)
         }
       } else if (algorithm === "3des") {
+        formData.append("password", password)
+        formData.append("keySize", "192")  // Triple DES uses 192-bit keys (3 x 64 bits)
+        formData.append("mode", tripleDesMode)
         formData.append("keyOption", tripleDesKeyOption)
         formData.append("key1", tripleDesKey1)
         if (tripleDesKeyOption === "two" || tripleDesKeyOption === "three") {
@@ -368,7 +392,6 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
         if (tripleDesKeyOption === "three") {
           formData.append("key3", tripleDesKey3)
         }
-        formData.append("mode", tripleDesMode)
         if (tripleDesMode !== "ecb") {
           formData.append("iv", tripleDesIv)
         }
@@ -376,10 +399,25 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
 
       if (partialEncryption && fileType !== "binary" && selectedText) {
         formData.append("partialEncryption", "true")
-        formData.append("selectedTextStart", selectedText.toString())
-        
+        formData.append("selectedTextStart", selectedText.start.toString())
+        formData.append("selectedTextEnd", selectedText.end.toString())
+        formData.append("selectedText", selectedText.text)
       }
-      console.log(formData)
+
+      // Add file content
+      if (file) {
+        if (fileType === "text" || fileType === "pdf") {
+          formData.append("plaintext", fileContent)
+        } else {
+          const fileBuffer = await file.arrayBuffer()
+          formData.append("plaintext", new Blob([fileBuffer]))
+        }
+      }
+
+      console.log("Form data contents:")
+      for (let pair of formData.entries()) {
+        console.log(pair[0] + ': ' + pair[1])
+      }
             
   
 
@@ -442,8 +480,7 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
         return "AES (Advanced Encryption Standard) - Symmetric block cipher with key sizes of 128, 192, or 256 bits."
       case "chacha20":
         return "ChaCha20 - High-speed stream cipher designed for software implementation without special hardware."
-      case "camellia":
-        return "Camellia - Symmetric block cipher with similar security and performance to AES."
+
       case "rsa":
         return "RSA - Asymmetric encryption algorithm using public/private key pairs for secure communication."
       case "3des":
@@ -551,60 +588,7 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
           </div>
         )
 
-      case "camellia":
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="camellia-key-size">Key Size</Label>
-              <Select value={camelliaKeySize} onValueChange={setCamelliaKeySize}>
-                <SelectTrigger id="camellia-key-size">
-                  <SelectValue placeholder="Select key size" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="128">128 bits (18 rounds)</SelectItem>
-                  <SelectItem value="192">192 bits (24 rounds)</SelectItem>
-                  <SelectItem value="256">256 bits (24 rounds)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="camellia-mode">Mode of Operation</Label>
-              <Select value={camelliaMode} onValueChange={setCamelliaMode}>
-                <SelectTrigger id="camellia-mode">
-                  <SelectValue placeholder="Select mode" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ecb">ECB (Electronic Codebook) - Not recommended for most uses</SelectItem>
-                  <SelectItem value="cbc">CBC (Cipher Block Chaining) - Requires IV</SelectItem>
-                  <SelectItem value="ctr">CTR (Counter) - Requires nonce</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {camelliaMode !== "ecb" && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="camellia-iv">{camelliaMode === "ctr" ? "Nonce" : "Initialization Vector (IV)"}</Label>
-                  <Button type="button" variant="outline" size="sm" onClick={generateIV}>
-                    Generate Random
-                  </Button>
-                </div>
-                <Input
-                  id="camellia-iv"
-                  value={camelliaIv}
-                  onChange={(e) => setCamelliaIv(e.target.value)}
-                  placeholder={`Enter ${camelliaMode === "ctr" ? "nonce" : "IV"} (hex format)`}
-                />
-                <p className="text-xs text-gray-500">
-                  {camelliaMode === "ctr"
-                    ? "Nonce must be unique for each encryption with the same key"
-                    : "IV should be random and unique for each encryption"}
-                </p>
-              </div>
-            )}
-          </div>
-        )
 
       case "rsa":
         return (
@@ -625,13 +609,17 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
                         <SelectValue placeholder="Select key size" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1024">1024 bits (Not recommended for sensitive data)</SelectItem>
                         <SelectItem value="2048">2048 bits (Standard security)</SelectItem>
                         <SelectItem value="4096">4096 bits (High security)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button type="button" onClick={simulateRsaKeyGeneration} disabled={isProcessing} className="w-full">
+                  <Button 
+                    type="button" 
+                    onClick={simulateRsaKeyGeneration} 
+                    disabled={isProcessing} 
+                    className="w-full"
+                  >
                     {isProcessing ? "Generating..." : "Generate Key Pair"}
                   </Button>
                   {(rsaPublicKey || rsaPrivateKey) && (
@@ -641,7 +629,7 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
                         Keys Generated
                       </AlertTitle>
                       <AlertDescription>
-                        RSA key pair has been generated. Make sure to save your private key securely.
+                        RSA key pair has been generated and downloaded. Make sure to save your private key securely.
                       </AlertDescription>
                     </Alert>
                   )}
@@ -743,10 +731,15 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="3des-key1">Key 1</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="3des-key1">Key 1</Label>
+                <Button type="button" variant="outline" size="sm" onClick={generateTripleDesKeys}>
+                  Generate Random Keys
+                </Button>
+              </div>
               <Input
                 id="3des-key1"
-                type="password"
+           
                 value={tripleDesKey1}
                 onChange={(e) => setTripleDesKey1(e.target.value)}
                 placeholder="Enter first key (8 bytes / 64 bits)"
@@ -758,7 +751,7 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
                 <Label htmlFor="3des-key2">Key 2</Label>
                 <Input
                   id="3des-key2"
-                  type="password"
+            
                   value={tripleDesKey2}
                   onChange={(e) => setTripleDesKey2(e.target.value)}
                   placeholder="Enter second key (8 bytes / 64 bits)"
@@ -771,7 +764,7 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
                 <Label htmlFor="3des-key3">Key 3</Label>
                 <Input
                   id="3des-key3"
-                  type="password"
+
                   value={tripleDesKey3}
                   onChange={(e) => setTripleDesKey3(e.target.value)}
                   placeholder="Enter third key (8 bytes / 64 bits)"
@@ -876,7 +869,7 @@ Hm8MXIp/mH4K1UYdZ0zZQOXG
                 <SelectContent>
                   <SelectItem value="aes">AES</SelectItem>
                   <SelectItem value="chacha20">ChaCha20</SelectItem>
-                  <SelectItem value="camellia">Camellia</SelectItem>
+      
                   <SelectItem value="rsa">RSA</SelectItem>
                   <SelectItem value="3des">Triple DES</SelectItem>
                 </SelectContent>

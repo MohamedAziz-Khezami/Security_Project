@@ -67,7 +67,7 @@ if nav == "Image ROI Encryption":
                 drawing_mode="rect",
                 key="canvas",
                 update_streamlit=True,
-                height=img.height, 
+                height=img.height,
                 width=img.width
             )
     with col2:

@@ -49,12 +49,27 @@ type Rectangle = {
 
 type SelectionMode = "create" | "edit" | "delete" | "move" | "zoom"
 
+type Result = {
+  success: boolean;
+  message: string;
+  processed_image?: string;
+}
+
+type RectangleInput = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isEditing?: boolean;
+}
+
 export default function ImageEncryption() {
   const [operation, setOperation] = useState<"encrypt" | "decrypt">("encrypt")
   const [password, setPassword] = useState("")
   const [image, setImage] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [result, setResult] = useState<Result | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [rectangles, setRectangles] = useState<Rectangle[]>([])
   const [currentRect, setCurrentRect] = useState<Rectangle | null>(null)
@@ -71,6 +86,7 @@ export default function ImageEncryption() {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [activeStep, setActiveStep] = useState(1)
   const [showPreview, setShowPreview] = useState(false)
+  const [editingRect, setEditingRect] = useState<RectangleInput | null>(null)
 
   // Algorithm-specific parameters
   const [aesKeySize, setAesKeySize] = useState("256")
@@ -122,7 +138,8 @@ export default function ImageEncryption() {
 
       reader.onload = (event) => {
         if (event.target?.result) {
-          setImage(event.target.result as string)
+          const imageData = event.target.result as string
+          setImage(imageData)
           setResult(null)
           setRectangles([])
           setHistory([])
@@ -138,7 +155,7 @@ export default function ImageEncryption() {
             imageRef.current = img
             initializeCanvas()
           }
-          img.src = event.target.result as string
+          img.src = imageData
         }
       }
 
@@ -178,7 +195,17 @@ export default function ImageEncryption() {
     if (selectionCtx) {
       selectionCtx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height)
     }
+
+    // Draw rectangles if any exist
+    drawRectangles()
   }
+
+  // Add a new effect to reinitialize canvas when operation changes
+  useEffect(() => {
+    if (image && canvasRef.current && selectionCanvasRef.current && imageRef.current) {
+      initializeCanvas()
+    }
+  }, [operation])
 
   const getCanvasCoordinates = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!selectionCanvasRef.current) return { x: 0, y: 0 }
@@ -818,11 +845,43 @@ export default function ImageEncryption() {
     setProgress(0)
 
     try {
-      // In a real app, you would:
-      // 1. Get the selection rectangles
-      // 2. Get the image data from the main canvas
-      // 3. Send both to your FastAPI backend along with the algorithm parameters
-      // 4. Receive the processed image and display it
+      // Create FormData for the request
+      const formData = new FormData()
+      
+      // Add the image data (remove the data:image/... prefix)
+      const base64Image = image.split(',')[1]
+      formData.append('image_content', base64Image)
+      
+      // Add operation and algorithm
+      formData.append('operation', operation)
+      formData.append('algorithm', algorithm)
+      
+      // Add regions
+      const regions = rectangles.map(rect => ({
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height
+      }))
+      formData.append('regions', JSON.stringify(regions))
+      
+      // Add algorithm-specific parameters
+      if (algorithm === "aes") {
+        formData.append('password', password)
+        formData.append('key_size', aesKeySize)
+        formData.append('mode', aesMode)
+        if (aesMode !== "ecb") {
+          formData.append('nonce', aesIv)
+        }
+      } else if (algorithm === "chacha20") {
+        formData.append('password', password)
+        formData.append('nonce', chachaNonce)
+      } else if (algorithm === "rc4") {
+        formData.append('rc4_key', rc4Key)
+      } else if (algorithm === "logistic") {
+        formData.append('logistic_initial', logisticInitialValue)
+        formData.append('logistic_parameter', logisticParameter)
+      }
 
       // Simulate progress
       const interval = setInterval(() => {
@@ -835,82 +894,35 @@ export default function ImageEncryption() {
         })
       }, 100)
 
-      // This is a placeholder for the API call
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Make the API call
+      const response = await fetch('http://localhost:8000/api/image/partial-encrypt', {
+        method: 'POST',
+        body: formData,
+      })
 
       clearInterval(interval)
       setProgress(100)
 
-      // Simulate processing the image
-      if (canvasRef.current) {
-        const canvas = canvasRef.current
-        const ctx = canvas.getContext("2d")
-
-        if (ctx) {
-          // Apply a simple visual effect to show the selected areas were processed
-          // In a real app, this would be replaced with the actual encrypted/decrypted image
-          rectangles.forEach((rect) => {
-            const imageData = ctx.getImageData(rect.x, rect.y, rect.width, rect.height)
-
-            // Apply different visual effects based on the algorithm to simulate encryption
-            for (let i = 0; i < imageData.data.length; i += 4) {
-              if (operation === "encrypt") {
-                switch (algorithm) {
-                  case "aes":
-                    // Pixelation effect for AES
-                    imageData.data[i] = Math.floor(imageData.data[i] / 30) * 30
-                    imageData.data[i + 1] = Math.floor(imageData.data[i + 1] / 30) * 30
-                    imageData.data[i + 2] = Math.floor(imageData.data[i + 2] / 30) * 30
-                    break
-                  case "chacha20":
-                    // Color shift effect for ChaCha20
-                    imageData.data[i] = (imageData.data[i] + 50) % 256
-                    imageData.data[i + 1] = (imageData.data[i + 1] + 100) % 256
-                    imageData.data[i + 2] = (imageData.data[i + 2] + 150) % 256
-                    break
-                  case "rc4":
-                    // Noise effect for RC4
-                    imageData.data[i] = (imageData.data[i] + Math.floor(Math.random() * 50)) % 256
-                    imageData.data[i + 1] = (imageData.data[i + 1] + Math.floor(Math.random() * 50)) % 256
-                    imageData.data[i + 2] = (imageData.data[i + 2] + Math.floor(Math.random() * 50)) % 256
-                    break
-                  case "logistic":
-                    // Inversion effect for Logistic XOR
-                    imageData.data[i] = 255 - imageData.data[i]
-                    imageData.data[i + 1] = 255 - imageData.data[i + 1]
-                    imageData.data[i + 2] = 255 - imageData.data[i + 2]
-                    break
-                }
-              } else {
-                // Simple color inversion for decryption
-                imageData.data[i] = 255 - imageData.data[i]
-                imageData.data[i + 1] = 255 - imageData.data[i + 1]
-                imageData.data[i + 2] = 255 - imageData.data[i + 2]
-                break
-              }
-            }
-
-            ctx.putImageData(imageData, rect.x, rect.y)
-          })
-
-          // Clear the selection canvas
-          const selectionCtx = selectionCanvasRef.current?.getContext("2d")
-          if (selectionCtx) {
-            selectionCtx.clearRect(0, 0, canvas.width, canvas.height)
-          }
-        }
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || 'Failed to process image')
       }
+
+      const result = await response.json()
+      console.log('Received response:', result)
 
       setResult({
         success: true,
         message: `Image ${operation === "encrypt" ? "encrypted" : "decrypted"} successfully with ${algorithm.toUpperCase()}!`,
+        processed_image: result.processed_image
       })
       
       setActiveStep(4)
     } catch (error) {
+      console.error('Error processing image:', error)
       setResult({
         success: false,
-        message: `Failed to ${operation} image. Please try again.`,
+        message: error instanceof Error ? error.message : 'Failed to process image. Please try again.',
       })
     } finally {
       setIsProcessing(false)
@@ -923,12 +935,15 @@ export default function ImageEncryption() {
     const canvas = canvasRef.current
     const dataUrl = canvas.toDataURL("image/png")
 
-    const a = document.createElement("a")
-    a.href = dataUrl
-    a.download = `${operation === "encrypt" ? "encrypted" : "decrypted"}_image.png`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
+    // Create a temporary link element
+    const link = document.createElement("a")
+    link.href = dataUrl
+    link.download = `${operation === "encrypt" ? "encrypted" : "decrypted"}_image.png`
+    
+    // Append to body, click, and remove
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
   }
 
   // Effect to draw rectangles whenever they change
@@ -952,6 +967,26 @@ export default function ImageEncryption() {
         return ""
     }
   }
+
+  const handleRectUpdate = (id: string, field: keyof RectangleInput, value: string) => {
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return;
+
+    setRectangles(prev => prev.map(rect => {
+      if (rect.id === id) {
+        const updated = { ...rect, [field]: numValue };
+        // Ensure the rectangle stays within canvas bounds
+        if (canvasRef.current) {
+          updated.x = Math.max(0, Math.min(updated.x, canvasRef.current.width - updated.width));
+          updated.y = Math.max(0, Math.min(updated.y, canvasRef.current.height - updated.height));
+          updated.width = Math.max(1, Math.min(updated.width, canvasRef.current.width - updated.x));
+          updated.height = Math.max(1, Math.min(updated.height, canvasRef.current.height - updated.y));
+        }
+        return updated;
+      }
+      return rect;
+    }));
+  };
 
   return (
     <Card className="w-full">
@@ -1341,7 +1376,17 @@ export default function ImageEncryption() {
                       >
                         <div className="overflow-auto" style={{ maxHeight: "500px" }}>
                           <div className="relative">
-                            <canvas ref={canvasRef} className="max-w-full" style={{ display: "block" }} />
+                            <canvas 
+                              ref={canvasRef} 
+                              className="max-w-full" 
+                              style={{ 
+                                display: "block",
+                                transform: `scale(${zoomLevel})`,
+                                transformOrigin: "top left",
+                                marginLeft: `${panOffset.x}px`,
+                                marginTop: `${panOffset.y}px`
+                              }} 
+                            />
                             <canvas
                               ref={selectionCanvasRef}
                               className="absolute top-0 left-0 max-w-full"
@@ -1350,7 +1395,11 @@ export default function ImageEncryption() {
                                 cursor: selectionMode === "create" ? "crosshair" : 
                                        selectionMode === "delete" ? "not-allowed" :
                                        selectionMode === "edit" ? "pointer" :
-                                       selectionMode === "move" ? "move" : "default"
+                                       selectionMode === "move" ? "move" : "default",
+                                transform: `scale(${zoomLevel})`,
+                                transformOrigin: "top left",
+                                marginLeft: `${panOffset.x}px`,
+                                marginTop: `${panOffset.y}px`
                               }}
                               onMouseDown={handleCanvasMouseDown}
                               onMouseMove={handleCanvasMouseMove}
@@ -1392,39 +1441,86 @@ export default function ImageEncryption() {
                             </Dialog>
                           </div>
                           
-                          <ScrollArea className="h-24 rounded-md border mt-2">
+                          <ScrollArea className="h-48 rounded-md border mt-2">
                             <div className="p-2">
                               {rectangles.map((rect, index) => (
-                                <div key={rect.id} className="flex items-center justify-between py-1 border-b last:border-0">
-                                  <div className="flex items-center gap-2">
-                                    <Badge variant={rect.id === selectedRectId ? "default" : "outline"} className="w-6 h-6 flex items-center justify-center p-0">
-                                      {index + 1}
-                                    </Badge>
-                                    <span className="text-sm">
-                                      {Math.round(rect.width)} × {Math.round(rect.height)} px at ({Math.round(rect.x)}, {Math.round(rect.y)})
-                                    </span>
+                                <div key={rect.id} className="space-y-2 py-2 border-b last:border-0">
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant={rect.id === selectedRectId ? "default" : "outline"} className="w-6 h-6 flex items-center justify-center p-0">
+                                        {index + 1}
+                                      </Badge>
+                                      <span className="text-sm font-medium">Region {index + 1}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-7 w-7" 
+                                        onClick={() => setSelectedRectId(rect.id)}
+                                      >
+                                        <Pencil className="h-3 w-3" />
+                                      </Button>
+                                      <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-7 w-7 text-red-500" 
+                                        onClick={() => {
+                                          const newRectangles = rectangles.filter(r => r.id !== rect.id)
+                                          setRectangles(newRectangles)
+                                          if (selectedRectId === rect.id) setSelectedRectId(null)
+                                        }}
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-1">
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-7 w-7" 
-                                      onClick={() => setSelectedRectId(rect.id)}
-                                    >
-                                      <Pencil className="h-3 w-3" />
-                                    </Button>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-7 w-7 text-red-500" 
-                                      onClick={() => {
-                                        const newRectangles = rectangles.filter(r => r.id !== rect.id)
-                                        setRectangles(newRectangles)
-                                        if (selectedRectId === rect.id) setSelectedRectId(null)
-                                      }}
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </Button>
+                                  
+                                  <div className="grid grid-cols-2 gap-2 text-sm">
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">X Position</Label>
+                                      <Input
+                                        type="number"
+                                        value={Math.round(rect.x)}
+                                        onChange={(e) => handleRectUpdate(rect.id, 'x', e.target.value)}
+                                        className="h-7"
+                                        min={0}
+                                        max={canvasRef.current?.width || 0}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Y Position</Label>
+                                      <Input
+                                        type="number"
+                                        value={Math.round(rect.y)}
+                                        onChange={(e) => handleRectUpdate(rect.id, 'y', e.target.value)}
+                                        className="h-7"
+                                        min={0}
+                                        max={canvasRef.current?.height || 0}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Width</Label>
+                                      <Input
+                                        type="number"
+                                        value={Math.round(rect.width)}
+                                        onChange={(e) => handleRectUpdate(rect.id, 'width', e.target.value)}
+                                        className="h-7"
+                                        min={1}
+                                        max={canvasRef.current?.width || 0}
+                                      />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <Label className="text-xs">Height</Label>
+                                      <Input
+                                        type="number"
+                                        value={Math.round(rect.height)}
+                                        onChange={(e) => handleRectUpdate(rect.id, 'height', e.target.value)}
+                                        className="h-7"
+                                        min={1}
+                                        max={canvasRef.current?.height || 0}
+                                      />
+                                    </div>
                                   </div>
                                 </div>
                               ))}
@@ -1522,12 +1618,78 @@ export default function ImageEncryption() {
             <div className={activeStep !== 4 ? "hidden" : ""}>
               <div className="space-y-6">
                 {result && (
-                  <Alert variant={result.success ? "default" : "destructive"}>
-                    <AlertTitle>{result.success ? "Success" : "Error"}</AlertTitle>
-                  </Alert>
+                  <>
+                    <Alert variant={result.success ? "default" : "destructive"}>
+                      <AlertTitle>{result.success ? "Success" : "Error"}</AlertTitle>
+                      <p>{result.message}</p>
+                    </Alert>
+
+                    {result.success && result.processed_image && (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label>Processed Image</Label>
+                          <div className="border rounded-md overflow-hidden">
+                            <img 
+                              src={`data:image/png;base64,${result.processed_image}`} 
+                              alt="Processed image"
+                              className="max-w-full"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setActiveStep(1)
+                              setResult(null)
+                              setRectangles([])
+                              setImage(null)
+                            }}
+                          >
+                            Start New
+                          </Button>
+
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              if (result.processed_image) {
+                                const link = document.createElement("a")
+                                link.href = `data:image/png;base64,${result.processed_image}`
+                                link.download = `${operation === "encrypt" ? "encrypted" : "decrypted"}_image.png`
+                                document.body.appendChild(link)
+                                link.click()
+                                document.body.removeChild(link)
+                              }
+                            }}
+                            className="flex items-center gap-2"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              width="24"
+                              height="24"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                              <polyline points="7 10 12 15 17 10" />
+                              <line x1="12" y1="15" x2="12" y2="3" />
+                            </svg>
+                            Download {operation === "encrypt" ? "Encrypted" : "Decrypted"} Image
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
-          </div>
+            </div>
           </div>
         </form>
       </CardContent>

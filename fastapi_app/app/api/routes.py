@@ -1,10 +1,11 @@
+import logging
 from fastapi import APIRouter, HTTPException
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 from typing import Optional, Literal
 from fastapi.responses import StreamingResponse
 from io import BytesIO
-
+import base64
 
 from schemas.encryption import (
     EncryptionRequest,
@@ -15,10 +16,11 @@ from schemas.encryption import (
 )
 from services.encryption_service import EncryptionService
 from services.image_service import ImageEncryptionService
-import base64
 import os
-import base64, binascii
+import binascii
 
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 encryption_service = EncryptionService()
@@ -30,7 +32,7 @@ async def encrypt_file(
     operation: Literal["encrypt", "decrypt"] = Form(...),
     algorithm: str = Form(...),
 
-    # Common AES/Camellia/ChaCha fields
+    # Common AES/ChaCha fields
     password: Optional[str] = Form(None),
     keySize: Optional[int] = Form(None),
     mode: Optional[str] = Form(None),
@@ -49,126 +51,262 @@ async def encrypt_file(
 
     # Partial encryption
     partialEncryption: Optional[bool] = Form(False),
-    selectedTextStart: Optional[int] = Form(None)):
+    selectedTextStart: Optional[str] = Form(None),  # Changed to str to handle form data
+    selectedTextEnd: Optional[str] = Form(None),    # Changed to str to handle form data
+    selectedText: Optional[str] = Form(None)
+    ):
     
-    text = await file.read()
-    if operation == "encrypt":
-    
-        output = encryption_service.aes_gcm_encrypt(
-            text,
-            password,
-            keySize,
-        )
-            
-        import base64
-
-        return {
-            "filename": f"encrypted_{file.filename}",
-            "data": base64.b64encode(output).decode(),
-            "message": "Success"
-        }
+    try:
+        # Read file content
+        file_content = await file.read()
+        logger.debug(f"File read - Size: {len(file_content)} bytes")
+        
+        if operation == "encrypt":
+            if partialEncryption and file.filename.endswith(('.txt', '.pdf')):
+                # Handle partial encryption for text files
+                full_text = file_content.decode('utf-8')
                 
-            
-    else :
-        print(type(text))
-        print(text)
-
-        #from bytes to base664
-        b64  = base64.b64encode(text)
-        b64_string = b64.decode('utf-8')
-        print(b64)
-        print(b64_string)
-        
-        
-        
-        
-        
-        
-        
-        
-    
-"""    try:
-        # from base64 to bytes
-            raw = base64.b64decode(request.fileContentsBase64)
-        
-    
-            alg = request.algorithm.lower()
-            if request.operation == "encrypt":
-                if alg == "aes" : 
-                    if request.mode == "gcm":
-                        out = encryption_service.aes_gcm_encrypt(raw, request.password, request.keySize, request.iv)
-                    elif request.mode == "ctr":
-                        out = encryption_service.aes_ctr_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "cbc":
-                        out = encryption_service.aes_cbc_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ecb":
-                        out = encryption_service.aes_ecb_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                elif alg == "chacha20":
-                    if request.mode == "chacha20":
-                        out = encryption_service.chacha20_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "chacha20-poly1305":
-                        out = encryption_service.chacha20_poly1305_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                elif alg == "camellia":
-                    if request.mode == "cbc":
-                        out = encryption_service.camellia_cbc_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ecb":
-                        out = encryption_service.camellia_ecb_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ctr":
-                        out = encryption_service.camellia_ctr_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                elif alg == "rsa":
-                    if request.publicKey:
-                        out = encryption_service.rsa_encrypt(request.fileContentsBase64, request.publicKey)
-                    else:
-                        raise ValueError("Public key is required for RSA encryption")
-                elif alg == "3des":
-                    if request.mode == "cbc":
-                        out = encryption_service.triple_des_cbc_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ecb":
-                        out = encryption_service.triple_des_ecb_encrypt(request.fileContentsBase64, request.password, request.keySize)
-                        
-                        
-                        
-                        
-            elif request.operation == "decrypt":
-                if alg == "aes":
-                    if request.mode == "gcm":
-                        out = encryption_service.aes_gcm_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ctr":
-                        out = encryption_service.aes_ctr_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "cbc":
-                        out = encryption_service.aes_cbc_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ecb":
-                        out = encryption_service.aes_ecb_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                elif alg == "chacha20":
-                    if request.mode == "chacha20":
-                        out = encryption_service.chacha20_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "chacha20-poly1305":
-                        out = encryption_service.chacha20_poly1305_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                elif alg == "camellia":
-                    if request.mode == "cbc":
-                        out = encryption_service.camellia_cbc_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ecb":
-                        out = encryption_service.camellia_ecb_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ctr":
-                        out = encryption_service.camellia_ctr_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                elif alg == "rsa":
-                    if request.privateKey:
-                        out = encryption_service.rsa_decrypt(request.fileContentsBase64, request.privateKey)
-                    else:
-                        raise ValueError("Private key is required for RSA decryption")
-                elif alg == "3des":
-                    if request.mode == "cbc":
-                        out = encryption_service.triple_des_cbc_decrypt(request.fileContentsBase64, request.password, request.keySize)
-                    elif request.mode == "ecb":
-                        out = encryption_service.triple_des_ecb_decrypt(request.fileContentsBase64, request.password, request.keySize)
+                # Convert string positions to integers
+                try:
+                    start_pos = int(selectedTextStart) if selectedTextStart else None
+                    end_pos = int(selectedTextEnd) if selectedTextEnd else None
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid text selection range")
                 
+                if not selectedText or start_pos is None or end_pos is None:
+                    raise HTTPException(status_code=400, detail="Selected text and range are required for partial encryption")
                 
+                logger.debug(f"Partial encryption params: text={selectedText}, start={start_pos}, end={end_pos}")
+                
+                if algorithm == "aes":
+                    if not password or not keySize or not mode:
+                        raise HTTPException(status_code=400, detail="Password, key size, and mode are required for AES encryption")
+                    result = encryption_service.partial_aes_encrypt(
+                        full_text, selectedText, start_pos, end_pos,
+                        password, keySize, mode, iv
+                    )
+                elif algorithm == "chacha20":
+                    result = encryption_service.partial_chacha20_encrypt(
+                        full_text, selectedText, start_pos, end_pos,
+                        password, keySize, mode, nonce
+                    )
+                elif algorithm == "rsa":
+                    if not publicKey:
+                        raise HTTPException(status_code=400, detail="Public key is required for RSA encryption")
+                    result = encryption_service.partial_rsa_encrypt(
+                        full_text, selectedText, start_pos, end_pos,
+                        publicKey
+                    )
+                elif algorithm == "3des":
+                    result = encryption_service.partial_triple_des_encrypt(
+                        full_text, selectedText, start_pos, end_pos,
+                        password, keySize, mode, keyOption, key1, key2, key3, iv
+                    )
+                else:
+                    raise HTTPException(status_code=400, detail=f"Unsupported algorithm: {algorithm}")
+                
+                return {
+                    "filename": f"encrypted_{file.filename}",
+                    "data": result,
+                    "message": "Success"
+                }
             else:
-                raise ValueError("Unsupported algorithm or missing keys")
+                # Handle full file encryption
+                if algorithm == "aes":
+                    if not password or not keySize or not mode:
+                        raise HTTPException(status_code=400, detail="Password, key size, and mode are required for AES encryption")
+                    encrypted_data = encryption_service.aes_encrypt(
+                        file_content,
+                        password,
+                        keySize,
+                        mode,
+                        iv
+                    )
+                elif algorithm == "chacha20":
+                    encrypted_data = encryption_service.chacha20_encrypt(
+                        file_content,
+                        password,
+                        keySize,
+                        mode,
+                        nonce
+                    )
+                elif algorithm == "rsa":
+                    if not publicKey:
+                        raise HTTPException(status_code=400, detail="Public key is required for RSA encryption")
+                    encrypted_data = encryption_service.rsa_encrypt(
+                        file_content,
+                        publicKey
+                    )
+                elif algorithm == "3des":
+                    encrypted_data = encryption_service.triple_des_encrypt(
+                        file_content,
+                        password,
+                        keySize,
+                        mode,
+                        keyOption,
+                        key1,
+                        key2,
+                        key3,
+                        iv
+                    )
+                else:
+                    raise HTTPException(status_code=400, detail=f"Unsupported algorithm: {algorithm}")
+                
+                encrypted_base64 = base64.b64encode(encrypted_data).decode('utf-8')
+                return {
+                    "filename": f"encrypted_{file.filename}",
+                    "data": encrypted_base64,
+                    "message": "Success"
+                }
+                
+        else:  # decrypt
+            try:
+                if partialEncryption and file.filename.endswith(('.txt', '.pdf')):
+                    # Handle partial decryption for text files
+                    full_text = file_content.decode('utf-8')
+                    
+                    # Convert string positions to integers
+                    try:
+                        start_pos = int(selectedTextStart) if selectedTextStart else None
+                        end_pos = int(selectedTextEnd) if selectedTextEnd else None
+                    except ValueError:
+                        raise HTTPException(status_code=400, detail="Invalid text selection range")
+                    
+                    if start_pos is None or end_pos is None:
+                        raise HTTPException(status_code=400, detail="Selected range is required for partial decryption")
+                    
+                    logger.debug(f"Partial decryption params: start={start_pos}, end={end_pos}")
+                    
+                    if algorithm == "aes":
+                        if not password or not keySize or not mode:
+                            raise HTTPException(status_code=400, detail="Password, key size, and mode are required for AES decryption")
+                        result = encryption_service.partial_aes_decrypt(
+                            full_text, start_pos, end_pos,
+                            password, keySize, mode
+                        )
+                    elif algorithm == "chacha20":
+                        result = encryption_service.partial_chacha20_decrypt(
+                            full_text, start_pos, end_pos,
+                            password, keySize, mode
+                        )
+                    elif algorithm == "rsa":
+                        if not privateKey:
+                            raise HTTPException(status_code=400, detail="Private key is required for RSA decryption")
+                        result = encryption_service.partial_rsa_decrypt(
+                            full_text, start_pos, end_pos,
+                            privateKey
+                        )
+                    elif algorithm == "3des":
+                        result = encryption_service.partial_triple_des_decrypt(
+                            full_text, start_pos, end_pos,
+                            password, keySize, mode, keyOption, key1, key2, key3
+                        )
+                    else:
+                        raise HTTPException(status_code=400, detail=f"Unsupported algorithm: {algorithm}")
+                    
+                    return {
+                        "filename": f"decrypted_{file.filename}",
+                        "data": result,
+                        "message": "Success"
+                    }
+                else:
+                    # Handle full file decryption
+                    encrypted_bytes = base64.b64decode(file_content)
+                    
+                    if algorithm == "aes":
+                        if not password or not keySize or not mode:
+                            raise HTTPException(status_code=400, detail="Password, key size, and mode are required for AES decryption")
+                        decrypted_data = encryption_service.aes_decrypt(
+                            encrypted_bytes,
+                            password,
+                            keySize,
+                            mode
+                        )
+                    elif algorithm == "chacha20":
+                        decrypted_data = encryption_service.chacha20_decrypt(
+                            encrypted_bytes,
+                            password,
+                            keySize,
+                            mode
+                        )
+                    elif algorithm == "rsa":
+                        if not privateKey:
+                            raise HTTPException(status_code=400, detail="Private key is required for RSA decryption")
+                        decrypted_data = encryption_service.rsa_decrypt(
+                            encrypted_bytes,
+                            privateKey
+                        )
+                    elif algorithm == "3des":
+                        decrypted_data = encryption_service.triple_des_decrypt(
+                            encrypted_bytes,
+                            password,
+                            keySize,
+                            mode,
+                            keyOption,
+                            key1,
+                            key2,
+                            key3
+                        )
+                    else:
+                        raise HTTPException(status_code=400, detail=f"Unsupported algorithm: {algorithm}")
+                    
+                    try:
+                        decrypted_text = decrypted_data.decode('utf-8')
+                        return {
+                            "filename": f"decrypted_{file.filename}",
+                            "data": decrypted_text,
+                            "message": "Success"
+                        }
+                    except UnicodeDecodeError:
+                        decrypted_base64 = base64.b64encode(decrypted_data).decode('utf-8')
+                        return {
+                            "filename": f"decrypted_{file.filename}",
+                            "data": decrypted_base64,
+                            "message": "Success"
+                        }
+            except ValueError as e:
+                logger.error(f"Decryption error: {str(e)}")
+                raise HTTPException(status_code=400, detail=str(e))
             
-            return {"success": True, "message": "Encrypted successfully", "processedSelection": out}
     except Exception as e:
+        logger.error(f"General error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+    
+    
+@router.post("/generate-rsa-keys")
+async def generate_rsa_keys():
+    #generate public and private keys using rsa.generate_private_key and rsa.generate_public_key
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+    
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    
+    public_key_pem = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    
+    return {
+        "private_key": private_key_pem.decode('utf-8'),
+        "public_key": public_key_pem.decode('utf-8')
+    }
+    
+    
+    
+    
 
 
 @router.post("/image/process", response_model=ImageEncryptionResponse)
@@ -269,4 +407,109 @@ async def auto_decrypt_image(request: AutoDecryptImageRequest):
     return ImageEncryptionResponse(
         processed_image=processed_image,
         filename="decrypted_image.png"
-    )"""
+    )
+
+@router.post("/image/partial-encrypt", response_model=ImageEncryptionResponse)
+async def partial_encrypt_image(
+    image_content: str = Form(...),  # Base64 encoded image
+    operation: Literal["encrypt", "decrypt"] = Form(...),
+    algorithm: str = Form(...),
+    regions: str = Form(...),  # JSON string of regions
+    password: Optional[str] = Form(None),
+    key_size: Optional[int] = Form(None),
+    mode: Optional[str] = Form(None),
+    iv: Optional[str] = Form(None),
+    nonce: Optional[str] = Form(None),
+    rc4_key: Optional[str] = Form(None),
+    logistic_initial: Optional[float] = Form(None),
+    logistic_parameter: Optional[float] = Form(None)
+):
+    try:
+        # Validate Base64 image
+        try:
+            image_data = base64.b64decode(image_content, validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid Base64 image data")
+
+        # Parse regions JSON
+        try:
+            import json
+            regions_list = json.loads(regions)
+            if not isinstance(regions_list, list):
+                raise ValueError("Regions must be a list")
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid regions JSON format")
+
+        # Validate regions format
+        for region in regions_list:
+            if not all(k in region for k in ("left", "top", "width", "height")):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Each region must have left, top, width, and height"
+                )
+
+        # Validate algorithm-specific parameters
+        if algorithm == "aes":
+            if not password:
+                raise HTTPException(status_code=400, detail="Password is required for AES")
+            if not key_size:
+                raise HTTPException(status_code=400, detail="Key size is required for AES")
+            if not mode:
+                raise HTTPException(status_code=400, detail="Mode is required for AES")
+            if mode != "ecb" and not nonce and not iv:
+                raise HTTPException(status_code=400, detail=f"{'Nonce' if mode in ['ctr', 'gcm'] else 'IV'} is required for AES-{mode.upper()}")
+        elif algorithm == "chacha20":
+            if not password:
+                raise HTTPException(status_code=400, detail="Password is required for ChaCha20")
+            if not nonce:
+                raise HTTPException(status_code=400, detail="Nonce is required for ChaCha20")
+        elif algorithm == "rc4":
+            if not rc4_key:
+                raise HTTPException(status_code=400, detail="RC4 key is required")
+        elif algorithm == "logistic":
+            if logistic_initial is None:
+                raise HTTPException(status_code=400, detail="Initial value is required for Logistic XOR")
+            if logistic_parameter is None:
+                raise HTTPException(status_code=400, detail="Parameter is required for Logistic XOR")
+            if not (0 < logistic_initial < 1) or logistic_initial == 0.5:
+                raise HTTPException(status_code=400, detail="Initial value must be between 0 and 1, excluding 0, 0.5, and 1")
+            if not (3.57 <= logistic_parameter <= 4):
+                raise HTTPException(status_code=400, detail="Parameter must be between 3.57 and 4")
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported algorithm: {algorithm}")
+
+        # Process the image
+        try:
+            processed_data = image_service.partial_process_image(
+                image_data=image_data,
+                regions=regions_list,
+                operation=operation,
+                algorithm=algorithm,
+                password=password,
+                key_size=key_size,
+                mode=mode,
+                iv=iv,
+                nonce=nonce,
+                rc4_key=rc4_key,
+                logistic_initial=logistic_initial,
+                logistic_parameter=logistic_parameter
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Image processing error: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to process image")
+
+        # Encode result back to Base64
+        processed_base64 = base64.b64encode(processed_data).decode('utf-8')
+        
+        # Return the response with the processed image
+        return {
+            "processed_image": processed_base64,
+            "filename": f"{operation}ed_image.png",
+            "success": "Success"
+        }
+
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

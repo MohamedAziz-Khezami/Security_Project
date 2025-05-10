@@ -33,15 +33,15 @@ with st.sidebar.expander("Algorithm & Mode", expanded=True):
 
 with st.sidebar.expander("Key / Nonce / Seed (hex)", expanded=False):
     if alg == "AES-CTR":
-        k_hex = st.text_area("AES Key (hex)", st.session_state.get('aes_key', os.urandom(32)).hex(), height=50)
-        n_hex = st.text_area("AES Nonce (hex)", st.session_state.get('aes_nonce', os.urandom(8)).hex(), height=30)
+        k_hex = st.text_area("AES Key (hex)", st.session_state.get('aes_key', os.urandom(32)).hex(), height=68)
+        n_hex = st.text_area("AES Nonce (hex)", st.session_state.get('aes_nonce', os.urandom(8)).hex(), height=68)
     elif alg == "ChaCha20":
-        k_hex = st.text_area("ChaCha20 Key (hex)", st.session_state.get('cha_key', os.urandom(32)).hex(), height=50)
-        n_hex = st.text_area("ChaCha20 Nonce (hex)", st.session_state.get('cha_nonce', os.urandom(12)).hex(), height=30)
+        k_hex = st.text_area("ChaCha20 Key (hex)", st.session_state.get('cha_key', os.urandom(32)).hex(), height=68)
+        n_hex = st.text_area("ChaCha20 Nonce (hex)", st.session_state.get('cha_nonce', os.urandom(12)).hex(), height=68)
     elif alg == "RC4":
-        k_hex = st.text_area("RC4 Key (hex)", st.session_state.get('rc4_key', os.urandom(16)).hex(), height=50)
+        k_hex = st.text_area("RC4 Key (hex)", st.session_state.get('rc4_key', os.urandom(16)).hex(), height=68)
     else:
-        k_hex = st.text_area("Logistic Seed (hex)", st.session_state.get('logistic_key', os.urandom(16)).hex(), height=50)
+        k_hex = st.text_area("Logistic Seed (hex)", st.session_state.get('logistic_key', os.urandom(16)).hex(), height=68)
     if st.button("🔄 Regenerate Key/Nonce"): st.experimental_rerun()
 
 # Layout: Main Area
