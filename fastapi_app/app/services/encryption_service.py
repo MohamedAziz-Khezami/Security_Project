@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidTag, InvalidSignature
-from app.core.config import settings
+from core.config import settings
 from typing import Optional, Tuple
 
 class EncryptionService:

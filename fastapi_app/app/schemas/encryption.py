@@ -27,4 +27,10 @@ class ImageEncryptionRequest(BaseModel):
 
 class ImageEncryptionResponse(BaseModel):
     processed_image: str = Field(..., description="Base64 encoded processed image")
-    filename: str = Field(..., description="Name of the processed image file") 
+    filename: str = Field(..., description="Name of the processed image file")
+
+class AutoDecryptImageRequest(BaseModel):
+    image_content: str = Field(..., description="Base64 encoded image content")
+    algorithm: Literal["AES-CTR", "ChaCha20", "RC4", "Logistic XOR"] = Field(..., description="Encryption algorithm to use")
+    key: str = Field(..., description="Hex encoded encryption key")
+    nonce: Optional[str] = Field(None, description="Hex encoded nonce (for AES-CTR and ChaCha20)") 
