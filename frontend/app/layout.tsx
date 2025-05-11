@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "v0 App",
-  description: "Created with v0",
+  title: "SecureTransfer",
+  description: "Encrypt and Decrypt your files, and images seamlessly",
   generator: "v0.dev",
+  icons: {
+    icon: '/image.ico',
+    apple: '/apple-icon.png',
+  },
 };
 
 export default function RootLayout({

@@ -185,9 +185,12 @@ export default function FileEncryption() {
 
   const generateIV = () => {
     if (algorithm === "aes") {
-      if (aesMode === "gcm" || aesMode === "ctr") {
+      if (aesMode === "gcm") {
         // 12 bytes (96 bits) for GCM/CTR
         setAesIv(generateRandomHex(24))
+      }
+      else if (aesMode === "ctr"){
+        setAesIv(generateRandomHex(32))
       }
       // 16 bytes (128 bits) for AES
       else setAesIv(generateRandomHex(32))

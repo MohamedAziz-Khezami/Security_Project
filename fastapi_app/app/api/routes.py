@@ -414,7 +414,7 @@ async def partial_encrypt_image(
     image_content: str = Form(...),  # Base64 encoded image
     operation: Literal["encrypt", "decrypt"] = Form(...),
     algorithm: str = Form(...),
-    regions: str = Form(...),  # JSON string of regions
+    regions: str = Form(...),  # String of regions in format "x,y,width,height;x,y,width,height"
     password: Optional[str] = Form(None),
     key_size: Optional[int] = Form(None),
     mode: Optional[str] = Form(None),
@@ -431,22 +431,31 @@ async def partial_encrypt_image(
         except (binascii.Error, ValueError):
             raise HTTPException(status_code=400, detail="Invalid Base64 image data")
 
-        # Parse regions JSON
+        # Parse regions string
         try:
-            import json
-            regions_list = json.loads(regions)
-            if not isinstance(regions_list, list):
-                raise ValueError("Regions must be a list")
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid regions JSON format")
-
-        # Validate regions format
-        for region in regions_list:
-            if not all(k in region for k in ("left", "top", "width", "height")):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Each region must have left, top, width, and height"
-                )
+            regions_list = []
+            for region_str in regions.split(';'):
+                if not region_str.strip():
+                    continue
+                try:
+                    x, y, width, height = map(int, region_str.split(','))
+                    regions_list.append({
+                        "left": x,
+                        "top": y,
+                        "width": width,
+                        "height": height
+                    })
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid region format: {region_str}. Expected format: x,y,width,height"
+                    )
+            
+            if not regions_list:
+                raise HTTPException(status_code=400, detail="No valid regions provided")
+                
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid regions format: {str(e)}")
 
         # Validate algorithm-specific parameters
         if algorithm == "aes":

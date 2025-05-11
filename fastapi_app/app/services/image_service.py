@@ -9,6 +9,7 @@ import io
 import base64
 import cv2
 import logging
+from Crypto.Util.Padding import pad, unpad
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +278,7 @@ class ImageEncryptionService:
                     
                     # Generate key from password
                     key = self._derive_key(password, key_size)
+                    print("key", key)
                     logger.info(f"Using AES-{key_size} in {mode} mode")
                     
                     # Handle different AES modes
@@ -288,22 +290,72 @@ class ImageEncryptionService:
                             nonce_bytes = binascii.unhexlify(nonce)
                         except:
                             nonce_bytes = nonce.encode()
-                        ctr = Counter.new(64, prefix=nonce_bytes, initial_value=0)
-                        cipher = AES.new(key, AES.MODE_CTR, counter=ctr)
-                        # For CTR mode, encryption and decryption are the same operation
+                        # Ensure nonce is exactly 16 bytes (128 bits) for AES
+                        if len(nonce_bytes) > 16:
+                            nonce_bytes = nonce_bytes[:16]
+                        elif len(nonce_bytes) < 16:
+                            nonce_bytes = nonce_bytes.ljust(16, b'\0')
+                        # Create counter with full 16-byte nonce
+                        ctr = Counter.new(
+                            128,
+                            prefix=nonce_bytes[:8],   # only first 8 bytes
+                            initial_value=0           # counter field will default to 8 bytes
+                        )
+                        cipher = AES.new(
+                            key,
+                            AES.MODE_CTR,
+                            nonce=nonce_bytes[:8],                                  # e.g. 8 B
+                            initial_value=int.from_bytes(nonce_bytes[8:], "big")    # remaining 8 B
+                        )
                         proc = cipher.encrypt(segment_bytes)
                     elif mode == "cbc":
-                        if not iv:
+                        if not iv and not nonce:
                             raise ValueError("IV is required for AES-CBC mode")
                         try:
-                            iv_bytes = binascii.unhexlify(iv)
+                            iv_bytes = binascii.unhexlify(nonce)
                         except:
                             iv_bytes = iv.encode()
+                        # Ensure IV is exactly 16 bytes
+                        if len(iv_bytes) > 16:
+                            iv_bytes = iv_bytes[:16]
+                        elif len(iv_bytes) < 16:
+                            iv_bytes = iv_bytes.ljust(16, b'\0')
+                        
                         cipher = AES.new(key, AES.MODE_CBC, iv_bytes)
                         if operation == "encrypt":
-                            proc = cipher.encrypt(segment_bytes)
+                            # Calculate padding needed to reach next 16-byte boundary
+                            padding_needed = (16 - (len(segment_bytes) % 16)) % 16
+                            padded_data = segment_bytes + bytes([padding_needed] * padding_needed)
+                            proc = cipher.encrypt(padded_data)
                         else:
-                            proc = cipher.decrypt(segment_bytes)
+                            # For decryption, we need to ensure the data length is a multiple of 16
+                            if len(segment_bytes) % 16 != 0:
+                                # Add padding to make it a multiple of 16
+                                padding_needed = 16 - (len(segment_bytes) % 16)
+                                segment_bytes = segment_bytes + bytes([padding_needed] * padding_needed)
+                            
+                            try:
+                                # Decrypt the data
+                                decrypted = cipher.decrypt(segment_bytes)
+                                
+                                # Get padding length from last byte
+                                padding_length = decrypted[-1]
+                                
+                                # Verify padding is valid
+                                if padding_length > 16 or padding_length == 0:
+                                    raise ValueError("Invalid padding length")
+                                
+                                # Verify all padding bytes are correct
+                                padding_bytes = decrypted[-padding_length:]
+                                if not all(x == padding_length for x in padding_bytes):
+                                    raise ValueError("Invalid padding bytes")
+                                
+                                # Remove padding
+                                proc = decrypted[:-padding_length]
+                            except Exception as e:
+                                logger.error(f"Padding error: {str(e)}")
+                                # If padding verification fails, try without padding
+                                proc = cipher.decrypt(segment_bytes)
                     elif mode == "gcm":
                         if not nonce:
                             raise ValueError("Nonce is required for AES-GCM mode")
@@ -353,10 +405,17 @@ class ImageEncryptionService:
                         raise ValueError("Parameter must be between 3.57 and 4")
                     
                     # Generate keystream using logistic map
-                    seed_int = int.from_bytes(password.encode() if password else os.urandom(16), 'big')
-                    x0 = seed_int / (2**128 - 1)
-                    mu = logistic_parameter
+                    # Use password if provided, otherwise use logistic_initial
+                    if password:
+                        seed_int = int.from_bytes(password.encode(), 'big')
+                        x0 = seed_int / (2**128 - 1)
+                    else:
+                        x0 = float(logistic_initial)
+                    
+                    mu = float(logistic_parameter)
                     ks = bytearray(len(segment_bytes))
+                    
+                    # Generate keystream
                     for i in range(len(segment_bytes)):
                         x0 = mu * x0 * (1 - x0)
                         ks[i] = int((x0 % 1) * 256)
