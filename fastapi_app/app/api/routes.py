@@ -7,15 +7,15 @@ from fastapi.responses import StreamingResponse
 from io import BytesIO
 import base64
 
-from schemas.encryption import (
+from app.schemas.encryption import (
     EncryptionRequest,
     EncryptionResponse,
     ImageEncryptionRequest,
     ImageEncryptionResponse,
     AutoDecryptImageRequest
 )
-from services.encryption_service import EncryptionService
-from services.image_service import ImageEncryptionService
+from app.services.encryption_service import EncryptionService
+from app.services.image_service import ImageEncryptionService
 import os
 import binascii
 
