@@ -1,8 +1,7 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect, useRef } from "react"
+import dynamic from 'next/dynamic'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -16,6 +15,27 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Document, Page, pdfjs } from 'react-pdf'
+import 'react-pdf/dist/esm/Page/AnnotationLayer.css'
+import 'react-pdf/dist/esm/Page/TextLayer.css'
+
+// Set up PDF.js worker with proper error handling
+try {
+  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
+} catch (error) {
+  console.error('Error setting up PDF.js worker:', error)
+}
+
+// Define supported file types
+const SUPPORTED_FILE_TYPES = {
+  document: ['pdf', 'docx', 'doc', 'odt', 'rtf'],
+  text: ['txt', 'json', 'csv', 'md', 'html', 'css', 'js', 'jsx', 'ts', 'tsx'],
+  spreadsheet: ['xlsx', 'xls', 'ods'],
+  presentation: ['pptx', 'ppt', 'odp'],
+  image: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'],
+  archive: ['zip', 'rar', '7z', 'tar', 'gz'],
+  binary: ['*'] // Default for unsupported types
+}
 
 export default function FileEncryption() {
   const [file, setFile] = useState<File | null>(null)
@@ -24,30 +44,35 @@ export default function FileEncryption() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
-  const [fileType, setFileType] = useState<"binary" | "text" | "pdf">("binary")
+  const [fileType, setFileType] = useState<"document" | "text" | "spreadsheet" | "presentation" | "image" | "archive" | "binary">("binary")
   const [fileContent, setFileContent] = useState<string>("")
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null)
   const [partialEncryption, setPartialEncryption] = useState(false)
   const [algorithm, setAlgorithm] = useState("aes")
   const [previewVisible, setPreviewVisible] = useState(false)
+  const [numPages, setNumPages] = useState<number | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [pdfText, setPdfText] = useState<string[]>([])
+  const [pdfPages, setPdfPages] = useState<any[]>([])
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const [documentType, setDocumentType] = useState<"pdf" | "docx" | "other">("other")
+  const [documentError, setDocumentError] = useState<string | null>(null)
+  const [documentContent, setDocumentContent] = useState<string[]>([])
+  const [documentPages, setDocumentPages] = useState<any[]>([])
 
   // Algorithm-specific parameters
   const [aesKeySize, setAesKeySize] = useState("256")
   const [aesMode, setAesMode] = useState("gcm")
   const [aesIv, setAesIv] = useState("")
-
   const [chachaMode, setChachaMode] = useState("chacha20-poly1305")
   const [chachaNonce, setChachaNonce] = useState("")
-
-
-
   const [rsaKeyType, setRsaKeyType] = useState<"generate" | "upload" | "paste">("generate")
   const [rsaPublicKey, setRsaPublicKey] = useState("")
   const [rsaPrivateKey, setRsaPrivateKey] = useState("")
   const [rsaKeySize, setRsaKeySize] = useState("2048")
   const [rsaPublicKeyFile, setRsaPublicKeyFile] = useState<File | null>(null)
   const [rsaPrivateKeyFile, setRsaPrivateKeyFile] = useState<File | null>(null)
-
   const [tripleDesKeyOption, setTripleDesKeyOption] = useState("three")
   const [tripleDesKey1, setTripleDesKey1] = useState("")
   const [tripleDesKey2, setTripleDesKey2] = useState("")
@@ -69,8 +94,7 @@ export default function FileEncryption() {
       setAesIv("")
     } else if (algorithm === "chacha20") {
       setChachaNonce("")
-    } 
-     else if (algorithm === "rsa") {
+    } else if (algorithm === "rsa") {
       setRsaPublicKey("")
       setRsaPrivateKey("")
       setRsaPublicKeyFile(null)
@@ -84,19 +108,126 @@ export default function FileEncryption() {
   }, [algorithm])
 
   const determineFileType = (file: File) => {
-    const extension = file.name.split(".").pop()?.toLowerCase()
-
-    if (extension === "pdf") {
-      setFileType("pdf")
-      simulatePdfToTextConversion(file)
-    } else if (["txt", "json", "csv", "md", "html", "css", "js", "jsx", "ts", "tsx"].includes(extension || "")) {
+    const extension = file.name.split(".").pop()?.toLowerCase() || ""
+    
+    // Reset states
+    setDocumentError(null)
+    setDocumentContent([])
+    setDocumentPages([])
+    setFileContent("")
+    
+    // Determine file category
+    if (SUPPORTED_FILE_TYPES.document.includes(extension)) {
+      setFileType("document")
+      if (extension === "pdf") {
+        setDocumentType("pdf")
+        const url = URL.createObjectURL(file)
+        setPdfUrl(url)
+        extractDocumentText(file, "pdf")
+      } else if (extension === "docx") {
+        setDocumentType("docx")
+        extractDocumentText(file, "docx")
+      } else {
+        setDocumentType("other")
+        extractDocumentText(file, "other")
+      }
+    } else if (SUPPORTED_FILE_TYPES.text.includes(extension)) {
       setFileType("text")
       readTextFile(file)
+    } else if (SUPPORTED_FILE_TYPES.spreadsheet.includes(extension)) {
+      setFileType("spreadsheet")
+      extractDocumentText(file, "spreadsheet")
+    } else if (SUPPORTED_FILE_TYPES.presentation.includes(extension)) {
+      setFileType("presentation")
+      extractDocumentText(file, "presentation")
+    } else if (SUPPORTED_FILE_TYPES.image.includes(extension)) {
+      setFileType("image")
+      // Handle image files
+      handleImageFile(file)
+    } else if (SUPPORTED_FILE_TYPES.archive.includes(extension)) {
+      setFileType("archive")
+      // Handle archive files
+      handleArchiveFile(file)
     } else {
       setFileType("binary")
       setFileContent("")
       setPreviewVisible(false)
     }
+  }
+
+  const extractDocumentText = async (file: File, type: string) => {
+    try {
+      setDocumentError(null)
+      const arrayBuffer = await file.arrayBuffer()
+      
+      switch (type) {
+        case "pdf":
+          await extractPdfText(arrayBuffer)
+          break
+        case "docx":
+          // TODO: Add docx extraction when library is added
+          console.log("DOCX extraction will be implemented")
+          break
+        case "spreadsheet":
+          // TODO: Add spreadsheet extraction when library is added
+          console.log("Spreadsheet extraction will be implemented")
+          break
+        case "presentation":
+          // TODO: Add presentation extraction when library is added
+          console.log("Presentation extraction will be implemented")
+          break
+        default:
+          // Handle other document types
+          console.log("Other document type extraction will be implemented")
+      }
+    } catch (error) {
+      console.error('Error extracting document text:', error)
+      setDocumentError(`Failed to extract text from ${type.toUpperCase()} file. Please ensure it's a valid document.`)
+      setResult({
+        success: false,
+        message: `Failed to extract text from ${type.toUpperCase()} file. Please try another file.`
+      })
+    }
+  }
+
+  const extractPdfText = async (arrayBuffer: ArrayBuffer) => {
+    const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
+    
+    // Add progress callback
+    loadingTask.onProgress = (progressData: { loaded: number; total: number }) => {
+      if (progressData.total > 0) {
+        const percent = (progressData.loaded / progressData.total) * 100
+        setProgress(Math.round(percent))
+      }
+    }
+
+    const pdf = await loadingTask.promise
+    const numPages = pdf.numPages
+    const textContent: string[] = []
+    const pages: any[] = []
+
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdf.getPage(i)
+      const text = await page.getTextContent()
+      const pageText = text.items.map((item: any) => item.str).join(' ')
+      textContent.push(pageText)
+      pages.push(page)
+    }
+
+    setPdfText(textContent)
+    setPdfPages(pages)
+    setFileContent(textContent.join('\n\n'))
+    setProgress(100)
+  }
+
+  const handleImageFile = async (file: File) => {
+    // TODO: Add image handling when library is added
+    console.log("Image handling will be implemented")
+  }
+
+  const handleArchiveFile = async (file: File) => {
+    // TODO: Add archive handling when library is added
+    console.log("Archive handling will be implemented")
   }
 
   const readTextFile = (file: File) => {
@@ -106,20 +237,6 @@ export default function FileEncryption() {
       setFileContent(content || "")
     }
     reader.readAsText(file)
-  }
-
-  const simulatePdfToTextConversion = (file: File) => {
-    // In a real app, you would use a PDF to text library
-    // Here we're simulating the conversion
-    setIsProcessing(true)
-
-    setTimeout(() => {
-      const fileName = file.name
-      setFileContent(
-        `This is the simulated text content extracted from the PDF file "${fileName}".\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.\n\nNullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.`,
-      )
-      setIsProcessing(false)
-    }, 1500)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,8 +294,7 @@ export default function FileEncryption() {
   }
 
   const generateTripleDesKeys = () => {
-    // Generate 8 bytes (64 bits) for each key
-    setTripleDesKey1(generateRandomHex(16))  // 8 bytes = 16 hex characters
+    setTripleDesKey1(generateRandomHex(16))
     setTripleDesKey2(generateRandomHex(16))
     setTripleDesKey3(generateRandomHex(16))
   }
@@ -186,50 +302,53 @@ export default function FileEncryption() {
   const generateIV = () => {
     if (algorithm === "aes") {
       if (aesMode === "gcm") {
-        // 12 bytes (96 bits) for GCM/CTR
         setAesIv(generateRandomHex(24))
-      }
-      else if (aesMode === "ctr"){
+      } else if (aesMode === "ctr") {
+        setAesIv(generateRandomHex(32))
+      } else {
         setAesIv(generateRandomHex(32))
       }
-      // 16 bytes (128 bits) for AES
-      else setAesIv(generateRandomHex(32))
     } else if (algorithm === "chacha20") {
       if (chachaMode === "chacha20-poly1305") {
-        // 12 bytes (96 bits) for ChaCha20-Poly1305
         setChachaNonce(generateRandomHex(24))
       } else {
-        // 16 bytes (128 bits) for original ChaCha20
         setChachaNonce(generateRandomHex(32))
       }
     } else if (algorithm === "3des") {
-      // 8 bytes (64 bits) for 3DES
       setTripleDesIv(generateRandomHex(16))
     }
   }
 
-  const downloadRSAKeys = (publicKey: string, privateKey: string) => {
-    // Download public key
-    const publicKeyBlob = new Blob([publicKey], { type: 'text/plain' });
-    const publicKeyUrl = URL.createObjectURL(publicKeyBlob);
-    const publicKeyLink = document.createElement('a');
-    publicKeyLink.href = publicKeyUrl;
-    publicKeyLink.download = 'public_key.pem';
-    document.body.appendChild(publicKeyLink);
-    publicKeyLink.click();
-    document.body.removeChild(publicKeyLink);
-    URL.revokeObjectURL(publicKeyUrl);
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages)
+  }
 
-    // Download private key
-    const privateKeyBlob = new Blob([privateKey], { type: 'text/plain' });
-    const privateKeyUrl = URL.createObjectURL(privateKeyBlob);
-    const privateKeyLink = document.createElement('a');
-    privateKeyLink.href = privateKeyUrl;
-    privateKeyLink.download = 'private_key.pem';
-    document.body.appendChild(privateKeyLink);
-    privateKeyLink.click();
-    document.body.removeChild(privateKeyLink);
-    URL.revokeObjectURL(privateKeyUrl);
+  const handlePdfPageChange = (pageNumber: number) => {
+    if (pageNumber >= 1 && pageNumber <= (numPages || 1)) {
+      setCurrentPage(pageNumber)
+    }
+  }
+
+  const downloadRSAKeys = (publicKey: string, privateKey: string) => {
+    const publicKeyBlob = new Blob([publicKey], { type: 'text/plain' })
+    const publicKeyUrl = URL.createObjectURL(publicKeyBlob)
+    const publicKeyLink = document.createElement('a')
+    publicKeyLink.href = publicKeyUrl
+    publicKeyLink.download = 'public_key.pem'
+    document.body.appendChild(publicKeyLink)
+    publicKeyLink.click()
+    document.body.removeChild(publicKeyLink)
+    URL.revokeObjectURL(publicKeyUrl)
+
+    const privateKeyBlob = new Blob([privateKey], { type: 'text/plain' })
+    const privateKeyUrl = URL.createObjectURL(privateKeyBlob)
+    const privateKeyLink = document.createElement('a')
+    privateKeyLink.href = privateKeyUrl
+    privateKeyLink.download = 'private_key.pem'
+    document.body.appendChild(privateKeyLink)
+    privateKeyLink.click()
+    document.body.removeChild(privateKeyLink)
+    URL.revokeObjectURL(privateKeyUrl)
   }
 
   const simulateRsaKeyGeneration = async () => {
@@ -245,40 +364,38 @@ export default function FileEncryption() {
         body: JSON.stringify({
           keySize: parseInt(rsaKeySize)
         })
-      });
+      })
 
       if (!response.ok) {
-        throw new Error('Failed to generate RSA keys');
+        throw new Error('Failed to generate RSA keys')
       }
 
-      const data = await response.json();
+      const data = await response.json()
       
-      setRsaPublicKey(data.public_key);
-      setRsaPrivateKey(data.private_key);
+      setRsaPublicKey(data.public_key)
+      setRsaPrivateKey(data.private_key)
       
-      // Download the keys automatically
-      downloadRSAKeys(data.public_key, data.private_key);
+      downloadRSAKeys(data.public_key, data.private_key)
       
       setResult({
         success: true,
         message: "RSA key pair generated and downloaded successfully. Make sure to save your private key securely."
-      });
+      })
 
     } catch (error) {
-      console.error('Error generating RSA keys:', error);
+      console.error('Error generating RSA keys:', error)
       setResult({
         success: false,
         message: "Failed to generate RSA keys. Please try again."
-      });
+      })
     } finally {
-      setIsProcessing(false);
+      setIsProcessing(false)
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validate inputs based on selected algorithm
     if (!file) {
       setResult({
         success: false,
@@ -287,7 +404,6 @@ export default function FileEncryption() {
       return
     }
 
-    // Algorithm-specific validation
     if (algorithm === "rsa") {
       if (operation === "encrypt" && !rsaPublicKey) {
         setResult({
@@ -344,7 +460,6 @@ export default function FileEncryption() {
     setIsProcessing(true)
     setProgress(0)
 
-    // Simulate progress
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 95) {
@@ -356,14 +471,11 @@ export default function FileEncryption() {
     }, 100)
 
     try {
-      // In a real app, you would send the file to your FastAPI backend
-      // This is a placeholder for the API call
       const formData = new FormData()
       formData.append("file", file)
       formData.append("operation", operation)
       formData.append("algorithm", algorithm)
 
-      // Add algorithm-specific parameters
       if (algorithm === "aes") {
         formData.append("password", password)
         formData.append("keySize", aesKeySize)
@@ -375,9 +487,7 @@ export default function FileEncryption() {
         formData.append("password", password)
         formData.append("mode", chachaMode)
         formData.append("nonce", chachaNonce)
-      } 
-        
-       else if (algorithm === "rsa") {
+      } else if (algorithm === "rsa") {
         if (operation === "encrypt") {
           formData.append("publicKey", rsaPublicKey)
         } else {
@@ -385,7 +495,7 @@ export default function FileEncryption() {
         }
       } else if (algorithm === "3des") {
         formData.append("password", password)
-        formData.append("keySize", "192")  // Triple DES uses 192-bit keys (3 x 64 bits)
+        formData.append("keySize", "192")
         formData.append("mode", tripleDesMode)
         formData.append("keyOption", tripleDesKeyOption)
         formData.append("key1", tripleDesKey1)
@@ -407,7 +517,6 @@ export default function FileEncryption() {
         formData.append("selectedText", selectedText.text)
       }
 
-      // Add file content
       if (file) {
         if (fileType === "text" || fileType === "pdf") {
           formData.append("plaintext", fileContent)
@@ -417,59 +526,56 @@ export default function FileEncryption() {
         }
       }
 
-      console.log("Form data contents:")
-      for (let pair of formData.entries()) {
-        console.log(pair[0] + ': ' + pair[1])
-      }
-            
-  
-
-
-   
-
-      // ----- New: Send to real API -----
       const response = await fetch('https://security-project-km7v.onrender.com/api/encrypt', {
         method: 'POST',
         body: formData,
-      });
-      const data = await response.json();
+      })
+      const data = await response.json()
 
-      clearInterval(interval);
-      setProgress(100);
+      clearInterval(interval)
+      setProgress(100)
 
       if (data.message === "Success") {
-        // If partial, update content
         if (partialEncryption && fileType !== "binary" && selectedText) {
-          const prefix = fileContent.substring(0, selectedText.start);
-          const suffix = fileContent.substring(selectedText.end);
-          setFileContent(prefix + data.processedSelection + suffix);
+          const prefix = fileContent.substring(0, selectedText.start)
+          const suffix = fileContent.substring(selectedText.end)
+          setFileContent(prefix + data.processedSelection + suffix)
         }
 
         setResult({
           success: true,
           message: data.message || `File ${operation}d successfully!`,
-        });
+        })
 
-        setFileContent(data.data);
+        setFileContent(data.data)
 
       } else {
-        setResult({ success: false, message: data.message || 'Operation failed.' });
+        setResult({ success: false, message: data.message || 'Operation failed.' })
       }
     } catch (error) {
-      clearInterval(interval);
-      setProgress(0);
-      setResult({ success: false, message: `Failed to ${operation} file. Please try again.` });
+      clearInterval(interval)
+      setProgress(0)
+      setResult({ success: false, message: `Failed to ${operation} file. Please try again.` })
     } finally {
-      setIsProcessing(false);
+      setIsProcessing(false)
     }
-  };
+  }
+
   const handleDownload = () => {
     if (result && result.success) {
-      const blob = new Blob([fileContent], { type: "application/octet-stream" })
+      let content = fileContent
+      let filename = file ? file.name : "encrypted_file"
+      
+      if (fileType === "document") {
+        content = documentContent.join('\n\n')
+        filename = filename.replace(/\.[^/.]+$/, '_extracted.txt')
+      }
+      
+      const blob = new Blob([content], { type: "text/plain" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = file ? file.name : "encrypted_file"
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -483,7 +589,6 @@ export default function FileEncryption() {
         return "AES (Advanced Encryption Standard) - Symmetric block cipher with key sizes of 128, 192, or 256 bits."
       case "chacha20":
         return "ChaCha20 - High-speed stream cipher designed for software implementation without special hardware."
-
       case "rsa":
         return "RSA - Asymmetric encryption algorithm using public/private key pairs for secure communication."
       case "3des":
@@ -590,8 +695,6 @@ export default function FileEncryption() {
             </div>
           </div>
         )
-
-
 
       case "rsa":
         return (
@@ -742,7 +845,6 @@ export default function FileEncryption() {
               </div>
               <Input
                 id="3des-key1"
-           
                 value={tripleDesKey1}
                 onChange={(e) => setTripleDesKey1(e.target.value)}
                 placeholder="Enter first key (8 bytes / 64 bits)"
@@ -754,7 +856,6 @@ export default function FileEncryption() {
                 <Label htmlFor="3des-key2">Key 2</Label>
                 <Input
                   id="3des-key2"
-            
                   value={tripleDesKey2}
                   onChange={(e) => setTripleDesKey2(e.target.value)}
                   placeholder="Enter second key (8 bytes / 64 bits)"
@@ -767,7 +868,6 @@ export default function FileEncryption() {
                 <Label htmlFor="3des-key3">Key 3</Label>
                 <Input
                   id="3des-key3"
-
                   value={tripleDesKey3}
                   onChange={(e) => setTripleDesKey3(e.target.value)}
                   placeholder="Enter third key (8 bytes / 64 bits)"
@@ -872,7 +972,6 @@ export default function FileEncryption() {
                 <SelectContent>
                   <SelectItem value="aes">AES</SelectItem>
                   <SelectItem value="chacha20">ChaCha20</SelectItem>
-      
                   <SelectItem value="rsa">RSA</SelectItem>
                   <SelectItem value="3des">Triple DES</SelectItem>
                 </SelectContent>
@@ -908,10 +1007,8 @@ export default function FileEncryption() {
               )}
             </div>
 
-            {/* Algorithm-specific options */}
             {renderAlgorithmOptions()}
 
-            {/* Password field for symmetric algorithms */}
             {algorithm !== "rsa" && (
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -949,28 +1046,115 @@ export default function FileEncryption() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>File Preview</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPreviewVisible(!previewVisible)}
-                    className="flex items-center gap-1"
-                  >
-                    <Eye className="h-4 w-4" />
-                    {previewVisible ? "Hide Preview" : "Show Preview"}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {fileType === "pdf" && (
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePdfPageChange(currentPage - 1)}
+                          disabled={currentPage <= 1}
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-sm">
+                          Page {currentPage} of {numPages || 1}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handlePdfPageChange(currentPage + 1)}
+                          disabled={currentPage >= (numPages || 1)}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPreviewVisible(!previewVisible)}
+                      className="flex items-center gap-1"
+                    >
+                      <Eye className="h-4 w-4" />
+                      {previewVisible ? "Hide Preview" : "Show Preview"}
+                    </Button>
+                  </div>
                 </div>
 
                 {previewVisible && (
                   <div className="border rounded-md p-2">
-                    <Textarea
-                      ref={textAreaRef}
-                      value={fileContent}
-                      onChange={(e) => setFileContent(e.target.value)}
-                      onSelect={handleTextSelection}
-                      className="min-h-[200px] font-mono text-sm"
-                      placeholder="File content will appear here..."
-                    />
+                    {fileType === "document" && pdfUrl ? (
+                      <div className="max-h-[500px] overflow-auto">
+                        {documentError ? (
+                          <Alert variant="destructive" className="mb-4">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Error</AlertTitle>
+                            <AlertDescription>{documentError}</AlertDescription>
+                          </Alert>
+                        ) : (
+                          <>
+                            {documentType === "pdf" && (
+                              <Document
+                                file={pdfUrl}
+                                onLoadSuccess={onDocumentLoadSuccess}
+                                onLoadError={(error) => {
+                                  console.error('Error loading PDF:', error)
+                                  setDocumentError("Failed to load PDF file. Please try another file.")
+                                }}
+                                loading={
+                                  <div className="flex items-center justify-center p-4">
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                                  </div>
+                                }
+                                className="flex flex-col items-center"
+                              >
+                                <Page
+                                  pageNumber={currentPage}
+                                  renderTextLayer={true}
+                                  renderAnnotationLayer={true}
+                                  className="max-w-full"
+                                  loading={
+                                    <div className="flex items-center justify-center p-4">
+                                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                                    </div>
+                                  }
+                                />
+                              </Document>
+                            )}
+                            {partialEncryption && !documentError && (
+                              <div className="mt-4">
+                                <Textarea
+                                  ref={textAreaRef}
+                                  value={documentContent[currentPage - 1] || ''}
+                                  onChange={(e) => {
+                                    const newContent = [...documentContent]
+                                    newContent[currentPage - 1] = e.target.value
+                                    setDocumentContent(newContent)
+                                    setFileContent(newContent.join('\n\n'))
+                                  }}
+                                  onSelect={handleTextSelection}
+                                  className="min-h-[100px] font-mono text-sm"
+                                  placeholder="Document text content..."
+                                />
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <Textarea
+                        ref={textAreaRef}
+                        value={fileContent}
+                        onChange={(e) => setFileContent(e.target.value)}
+                        onSelect={handleTextSelection}
+                        className="min-h-[200px] font-mono text-sm"
+                        placeholder="File content will appear here..."
+                      />
+                    )}
                     {partialEncryption && selectedText && (
                       <div className="mt-2 p-2 bg-gray-100 rounded-md">
                         <p className="text-sm font-medium">Selected Text:</p>
