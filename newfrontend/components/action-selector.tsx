@@ -3,6 +3,7 @@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Lock, Unlock, FileDigit } from "lucide-react"
+import { useCallback } from "react"
 
 interface ActionSelectorProps {
   action: "encrypt" | "decrypt" | "hash"
@@ -10,10 +11,17 @@ interface ActionSelectorProps {
 }
 
 export function ActionSelector({ action, onChange }: ActionSelectorProps) {
+  const handleValueChange = useCallback((value: string) => {
+    if (value !== action) {
+      onChange(value as "encrypt" | "decrypt" | "hash")
+    }
+  }, [action, onChange])
+
   return (
     <RadioGroup
+      defaultValue={action}
       value={action}
-      onValueChange={(value) => onChange(value as "encrypt" | "decrypt" | "hash")}
+      onValueChange={handleValueChange}
       className="flex flex-col sm:flex-row gap-4"
     >
       <div className="flex items-center space-x-2 border rounded-lg p-4 cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-all duration-300 flex-1 hover:shadow-md">

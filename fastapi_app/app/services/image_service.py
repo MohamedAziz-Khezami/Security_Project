@@ -20,8 +20,9 @@ class ImageEncryptionService:
     def process_image_region(self, image_data: bytes, region: Dict, key: bytes, nonce: Optional[bytes], 
                            algorithm: str, operation: str) -> bytes:
         """Process a single region of an image with the specified algorithm."""
-        x = int(region["left"])
-        y = int(region["top"])
+        # Handle both x/y and left/top coordinate formats
+        x = int(region.get("left", region.get("x", 0)))
+        y = int(region.get("top", region.get("y", 0)))
         width = int(region["width"] * region.get("scaleX", 1))
         height = int(region["height"] * region.get("scaleY", 1))
 
@@ -252,8 +253,9 @@ class ImageEncryptionService:
             for i, region in enumerate(regions):
                 logger.info(f"Processing region {i+1}: {region}")
                 
-                x = int(region["left"])
-                y = int(region["top"])
+                # Handle both x/y and left/top coordinate formats
+                x = int(region.get("left", region.get("x", 0)))
+                y = int(region.get("top", region.get("y", 0)))
                 width = int(region["width"])
                 height = int(region["height"])
                 

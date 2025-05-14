@@ -1,18 +1,19 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi import FastAPI, File, Form, UploadFile
-from fastapi.responses import JSONResponse
-from typing import Optional, Literal
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import Optional, Literal, List
 from io import BytesIO
 import base64
+import json
 
 from app.schemas.encryption import (
     EncryptionRequest,
     EncryptionResponse,
     ImageEncryptionRequest,
     ImageEncryptionResponse,
-    AutoDecryptImageRequest
+    AutoDecryptImageRequest,
+    ProcessFileResponse
 )
 from app.services.encryption_service import EncryptionService
 from app.services.image_service import ImageEncryptionService
@@ -76,11 +77,106 @@ class FileInfo(BaseModel):
 # Endpoint to process the file (encrypt, decrypt, or hash)
 @router.post("/encrypt")
 async def process_file(
-    request: Request
+    action: str = Form(...),
+    algorithm: str = Form(...),
+    apply_to: str = Form("full"),
+    key: Optional[str] = Form(None),
+    private_key: Optional[str] = Form(None),
+    content: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    file_name: Optional[str] = Form(None),
+    file_type: Optional[str] = Form(None),
+    is_text: bool = Form(False),
+    start_byte: Optional[int] = Form(None),
+    end_byte: Optional[int] = Form(None),
+    image_regions: Optional[str] = Form(None)
 ):
-    form_data = await request.form()
-    print(form_data)
-    return None
+    """
+    Process a file or text content with the specified encryption algorithm.
+    """
+    try:
+        # Log request details
+        logger.info(f"Processing request:")
+        logger.info(f"  - Action: {action}")
+        logger.info(f"  - Algorithm: {algorithm}")
+        logger.info(f"  - Apply to: {apply_to}")
+        logger.info(f"  - Is text: {is_text}")
+        
+        # Prepare request data
+        request_data = {
+            "action": action,
+            "algorithm": algorithm,
+            "apply_to": apply_to,
+            "key": key,
+            "private_key": private_key,
+            "is_text": is_text
+        }
+        
+        # Handle text input
+        if is_text:
+            if not content:
+                raise HTTPException(status_code=400, detail="Content is required for text processing")
+            request_data["content"] = content
+            
+            if apply_to == "partial":
+                if start_byte is None or end_byte is None:
+                    raise HTTPException(status_code=400, detail="start_byte and end_byte are required for partial text processing")
+                request_data["start_byte"] = start_byte
+                request_data["end_byte"] = end_byte
+        
+        # Handle file input
+        else:
+            if not file:
+                raise HTTPException(status_code=400, detail="File is required for file processing")
+            
+            # Read file content asynchronously
+            file_content = await file.read()
+            request_data["file"] = file_content  # Pass the bytes directly
+            request_data["file_name"] = file_name or file.filename
+            request_data["file_type"] = file_type or file.content_type
+            
+            if apply_to == "partial" and file_type and file_type.startswith("image/"):
+                if not image_regions:
+                    raise HTTPException(status_code=400, detail="image_regions is required for partial image processing")
+                try:
+                    regions = json.loads(image_regions)
+                    request_data["image_regions"] = regions
+                    logger.info(f"  - Image regions: {regions}")
+                except json.JSONDecodeError:
+                    raise HTTPException(status_code=400, detail="Invalid image_regions format")
+        
+        # Process the request
+        result = encryption_service.process_file(request_data)
+        
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result["message"])
+        
+        # If it's a file (not text), return a streaming response
+        if not is_text:
+            try:
+                # Decode the base64 content
+                processed_content = base64.b64decode(result["processedContent"])
+                
+                # Create a streaming response
+                return StreamingResponse(
+                    BytesIO(processed_content),
+                    media_type=request_data["file_type"],
+                    headers={
+                        "Content-Disposition": f'attachment; filename="{result["fileName"]}"'
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error creating streaming response: {str(e)}")
+                raise HTTPException(status_code=500, detail="Error preparing file for download")
+        
+        # For text content, return the JSON response
+        return result
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing request: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/image/auto-decrypt", response_model=ImageEncryptionResponse)
 async def auto_decrypt_image(request: AutoDecryptImageRequest):

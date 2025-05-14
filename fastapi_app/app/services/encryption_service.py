@@ -1,539 +1,288 @@
 import os
 import base64
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.padding import PKCS7
-import logging
+import hashlib
 import binascii
+from typing import Optional, Union, Dict, List
+from Crypto.Cipher import AES, ChaCha20, ARC4
+from Crypto.Util.Padding import pad, unpad
+from Crypto.Protocol.KDF import PBKDF2
+from Crypto.Hash import SHA256
+import numpy as np
+from PIL import Image
+import io
+import logging
 
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class EncryptionService:
     def __init__(self):
-        pass
+        self.supported_algorithms = {
+            "AES": ["cbc", "ctr", "gcm"],
+            "ChaCha20": ["stream"],
+            "RC4": ["stream"],
+            "SHA-256": ["hash"],
+            "BLAKE3": ["hash"]
+        }
 
-    def _derive_key(self, password: str, salt: bytes, key_size: int) -> bytes:
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=key_size // 8,
-            salt=salt,
-            iterations=100_000,
+    def _derive_key(self, password: str, key_size: int) -> bytes:
+        """Derive a cryptographic key from a password."""
+        salt = b'fixed_salt_for_demo'  # In production, use a unique salt per encryption
+        return PBKDF2(
+            password.encode(),
+            salt,
+            dkLen=key_size // 8,
+            count=100000,
+            hmac_hash_module=SHA256
         )
-        return kdf.derive(password.encode("utf-8"))
 
-    def _pad_data(self, data: bytes, block_size: int = 16) -> bytes:
-        padder = PKCS7(block_size * 8).padder()
-        return padder.update(data) + padder.finalize()
-
-    def _unpad_data(self, data: bytes, block_size: int = 16) -> bytes:
-        unpadder = PKCS7(block_size * 8).unpadder()
-        return unpadder.update(data) + unpadder.finalize()
-
-    def aes_encrypt(self, plaintext: bytes, password: str, key_size: int, mode: str, iv: str = None) -> bytes:
+    def _process_text(self, content: str, action: str, algorithm: str, key: Optional[str] = None,
+                     private_key: Optional[str] = None, start_byte: Optional[int] = None,
+                     end_byte: Optional[int] = None) -> str:
+        """Process text content with the specified algorithm."""
         try:
-            # 1) Derive key with PBKDF2 + random salt (16 bytes)
-            salt = os.urandom(16)
-            key = self._derive_key(password, salt, key_size)
-
-            # 2) Handle IV based on mode
-            if mode == "gcm":
-                if iv:
-                    try:
-                        iv_bytes = binascii.unhexlify(iv)
-                        if len(iv_bytes) != 12:
-                            raise ValueError("IV must be 12 bytes (24 hex characters)")
-                    except Exception as e:
-                        raise ValueError(f"Invalid IV format: {str(e)}")
+            if action == "hash":
+                if algorithm == "SHA-256":
+                    hash_obj = hashlib.sha256(content.encode())
+                elif algorithm == "BLAKE3":
+                    hash_obj = hashlib.blake2b(content.encode())
                 else:
-                    iv_bytes = os.urandom(12)
-                cipher = AESGCM(key)
-                ciphertext = cipher.encrypt(iv_bytes, plaintext, None)
-                return salt + iv_bytes + ciphertext
+                    raise ValueError(f"Unsupported hash algorithm: {algorithm}")
+                return hash_obj.hexdigest()
 
-            elif mode in ["cbc", "ctr"]:
-                if iv:
-                    try:
-                        iv_bytes = binascii.unhexlify(iv)
-                        if len(iv_bytes) != 16:
-                            raise ValueError("IV must be 16 bytes (32 hex characters)")
-                    except Exception as e:
-                        raise ValueError(f"Invalid IV format: {str(e)}")
-                else:
-                    iv_bytes = os.urandom(16)
-                
-                if mode == "cbc":
-                    # Add PKCS7 padding for CBC mode
-                    padded_data = self._pad_data(plaintext)
-                    cipher = Cipher(algorithms.AES(key), modes.CBC(iv_bytes))
-                else:  # ctr
-                    cipher = Cipher(algorithms.AES(key), modes.CTR(iv_bytes))
-                    padded_data = plaintext  # CTR mode doesn't need padding
-                
-                encryptor = cipher.encryptor()
-                ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-                return salt + iv_bytes + ciphertext
+            if not key:
+                raise ValueError("Key is required for encryption/decryption")
 
-            elif mode == "ecb":
-                # Add PKCS7 padding for ECB mode
-                padded_data = self._pad_data(plaintext)
-                cipher = Cipher(algorithms.AES(key), modes.ECB())
-                encryptor = cipher.encryptor()
-                ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-                return salt + ciphertext
+            if algorithm == "AES":
+                key_bytes = self._derive_key(key, 256)
+                if action == "encrypt":
+                    cipher = AES.new(key_bytes, AES.MODE_CBC)
+                    ct_bytes = cipher.encrypt(pad(content.encode(), AES.block_size))
+                    return base64.b64encode(cipher.iv + ct_bytes).decode()
+                else:  # decrypt
+                    data = base64.b64decode(content)
+                    iv = data[:16]
+                    ct = data[16:]
+                    cipher = AES.new(key_bytes, AES.MODE_CBC, iv)
+                    return unpad(cipher.decrypt(ct), AES.block_size).decode()
+
+            elif algorithm == "ChaCha20":
+                key_bytes = self._derive_key(key, 256)
+                nonce = os.urandom(12)
+                cipher = ChaCha20.new(key=key_bytes, nonce=nonce)
+                if action == "encrypt":
+                    ct_bytes = cipher.encrypt(content.encode())
+                    return base64.b64encode(nonce + ct_bytes).decode()
+                else:  # decrypt
+                    data = base64.b64decode(content)
+                    nonce = data[:12]
+                    ct = data[12:]
+                    cipher = ChaCha20.new(key=key_bytes, nonce=nonce)
+                    return cipher.decrypt(ct).decode()
+
+            elif algorithm == "RC4":
+                key_bytes = key.encode()
+                cipher = ARC4.new(key_bytes)
+                if action == "encrypt":
+                    ct_bytes = cipher.encrypt(content.encode())
+                    return base64.b64encode(ct_bytes).decode()
+                else:  # decrypt
+                    data = base64.b64decode(content)
+                    return cipher.decrypt(data).decode()
 
             else:
-                raise ValueError(f"Unsupported AES mode: {mode}")
+                raise ValueError(f"Unsupported algorithm: {algorithm}")
 
         except Exception as e:
-            logger.error(f"AES encryption error: {str(e)}")
+            logger.error(f"Error processing text: {str(e)}")
             raise
 
-    def aes_decrypt(self, encrypted_data: bytes, password: str, key_size: int, mode: str) -> bytes:
+    def _process_image_region(self, image_data: bytes, region: Dict, action: str,
+                            algorithm: str, key: Optional[str] = None) -> bytes:
+        """Process a specific region of an image."""
         try:
-            if mode == "gcm":
-                if len(encrypted_data) < 28:  # 16 (salt) + 12 (iv)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                iv = encrypted_data[16:28]
-                ciphertext = encrypted_data[28:]
-                
-                key = self._derive_key(password, salt, key_size)
-                cipher = AESGCM(key)
-                return cipher.decrypt(iv, ciphertext, None)
-
-            elif mode in ["cbc", "ctr"]:
-                if len(encrypted_data) < 32:  # 16 (salt) + 16 (iv)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                iv = encrypted_data[16:32]
-                ciphertext = encrypted_data[32:]
-                
-                key = self._derive_key(password, salt, key_size)
-                if mode == "cbc":
-                    cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
-                    decryptor = cipher.decryptor()
-                    padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-                    return self._unpad_data(padded_data)
-                else:  # ctr
-                    cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
-                    decryptor = cipher.decryptor()
-                    return decryptor.update(ciphertext) + decryptor.finalize()
-
-            elif mode == "ecb":
-                if len(encrypted_data) < 16:  # 16 (salt)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                ciphertext = encrypted_data[16:]
-                
-                key = self._derive_key(password, salt, key_size)
-                cipher = Cipher(algorithms.AES(key), modes.ECB())
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-                return self._unpad_data(padded_data)
-
+            # Convert image data to numpy array
+            img = Image.open(io.BytesIO(image_data))
+            img_array = np.array(img)
+            
+            # Extract region coordinates
+            x = int(region.get("left", region.get("x", 0)))
+            y = int(region.get("top", region.get("y", 0)))
+            width = int(region["width"])
+            height = int(region["height"])
+            
+            # Ensure coordinates are within bounds
+            h, w, _ = img_array.shape
+            x = max(0, min(x, w - 1))
+            y = max(0, min(y, h - 1))
+            width = max(1, min(width, w - x))
+            height = max(1, min(height, h - y))
+            
+            # Extract region data
+            region_data = img_array[y:y+height, x:x+width].tobytes()
+            
+            # Process region based on algorithm
+            if algorithm == "AES":
+                key_bytes = self._derive_key(key, 256)
+                cipher = AES.new(key_bytes, AES.MODE_CBC)
+                if action == "encrypt":
+                    ct_bytes = cipher.encrypt(pad(region_data, AES.block_size))
+                    processed = cipher.iv + ct_bytes
+                else:  # decrypt
+                    iv = region_data[:16]
+                    ct = region_data[16:]
+                    cipher = AES.new(key_bytes, AES.MODE_CBC, iv)
+                    processed = unpad(cipher.decrypt(ct), AES.block_size)
+            
+            elif algorithm == "ChaCha20":
+                key_bytes = self._derive_key(key, 256)
+                nonce = os.urandom(12)
+                cipher = ChaCha20.new(key=key_bytes, nonce=nonce)
+                if action == "encrypt":
+                    ct_bytes = cipher.encrypt(region_data)
+                    processed = nonce + ct_bytes
+                else:  # decrypt
+                    nonce = region_data[:12]
+                    ct = region_data[12:]
+                    cipher = ChaCha20.new(key=key_bytes, nonce=nonce)
+                    processed = cipher.decrypt(ct)
+            
+            elif algorithm == "RC4":
+                key_bytes = key.encode()
+                cipher = ARC4.new(key_bytes)
+                processed = cipher.encrypt(region_data)
+            
             else:
-                raise ValueError(f"Unsupported AES mode: {mode}")
-
+                raise ValueError(f"Unsupported algorithm for image processing: {algorithm}")
+            
+            # Convert processed bytes back to numpy array
+            processed_array = np.frombuffer(processed[:width*height*3], dtype=np.uint8).reshape((height, width, 3))
+            
+            # Update the original image array
+            img_array[y:y+height, x:x+width] = processed_array
+            
+            # Convert back to image and return bytes
+            processed_img = Image.fromarray(img_array)
+            output = io.BytesIO()
+            processed_img.save(output, format='PNG')
+            return output.getvalue()
+            
         except Exception as e:
-            logger.error(f"AES decryption error: {str(e)}")
-            raise ValueError(f"Decryption failed: {str(e)}")
+            logger.error(f"Error processing image region: {str(e)}")
+            raise
 
-    def chacha20_encrypt(self, plaintext: bytes, password: str, key_size: int, mode: str, nonce: str = None) -> bytes:
+    def process_file(self, request_data: Dict) -> Dict:
+        """Process a file or text content with the specified algorithm."""
         try:
-            # ChaCha20 always uses 256-bit keys
-            salt = os.urandom(16)
-            key = self._derive_key(password, salt, 256)  # Force 256-bit key for ChaCha20
-
-            if mode == "chacha20-poly1305":
-                if nonce:
-                    try:
-                        nonce_bytes = binascii.unhexlify(nonce)
-                        if len(nonce_bytes) != 12:
-                            raise ValueError("Nonce must be 12 bytes (24 hex characters) for ChaCha20-Poly1305")
-                    except Exception as e:
-                        raise ValueError(f"Invalid nonce format: {str(e)}")
+            action = request_data["action"]
+            algorithm = request_data["algorithm"]
+            apply_to = request_data.get("apply_to", "full")
+            key = request_data.get("key")
+            private_key = request_data.get("private_key")
+            is_text = request_data.get("is_text", False)
+            
+            # Validate algorithm
+            if algorithm not in self.supported_algorithms:
+                raise ValueError(f"Unsupported algorithm: {algorithm}")
+            
+            # Process based on input type
+            if is_text:
+                content = request_data["content"]
+                if apply_to == "partial":
+                    start_byte = request_data.get("start_byte")
+                    end_byte = request_data.get("end_byte")
+                    if start_byte is None or end_byte is None:
+                        raise ValueError("start_byte and end_byte are required for partial text processing")
+                    result = self._process_text(content, action, algorithm, key, private_key,
+                                             int(start_byte), int(end_byte))
                 else:
-                    nonce_bytes = os.urandom(12)
+                    result = self._process_text(content, action, algorithm, key, private_key)
                 
-                # Use ChaCha20Poly1305 for authenticated encryption
-                cipher = ChaCha20Poly1305(key)
-                ciphertext = cipher.encrypt(nonce_bytes, plaintext, None)
-                return salt + nonce_bytes + ciphertext
-
-            elif mode == "chacha20":
-                if nonce:
-                    try:
-                        nonce_bytes = binascii.unhexlify(nonce)
-                        if len(nonce_bytes) != 16:
-                            raise ValueError("Nonce must be 16 bytes (32 hex characters) for ChaCha20")
-                    except Exception as e:
-                        raise ValueError(f"Invalid nonce format: {str(e)}")
-                else:
-                    nonce_bytes = os.urandom(16)
-                
-                # Use ChaCha20 for stream encryption
-                cipher = Cipher(algorithms.ChaCha20(key, nonce_bytes), None)
-                encryptor = cipher.encryptor()
-                ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-                return salt + nonce_bytes + ciphertext
+                return {
+                    "success": True,
+                    "message": f"Text {action}ed successfully",
+                    "processedContent": result,
+                    "fileName": "processed_text.txt"
+                }
+            
             else:
-                raise ValueError(f"Unsupported ChaCha20 mode: {mode}")
-
-        except Exception as e:
-            logger.error(f"ChaCha20 encryption error: {str(e)}")
-            raise
-
-    def chacha20_decrypt(self, encrypted_data: bytes, password: str, key_size: int, mode: str) -> bytes:
-        try:
-            # ChaCha20 always uses 256-bit keys
-            if mode == "chacha20-poly1305":
-                if len(encrypted_data) < 28:  # 16 (salt) + 12 (nonce)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                nonce = encrypted_data[16:28]
-                ciphertext = encrypted_data[28:]
+                # Handle file processing
+                file_content = request_data["file"]  # This is now bytes directly
+                file_type = request_data.get("file_type", "")
+                file_name = request_data.get("file_name", "processed_file")
                 
-                key = self._derive_key(password, salt, 256)  # Force 256-bit key for ChaCha20
-                cipher = ChaCha20Poly1305(key)
-                return cipher.decrypt(nonce, ciphertext, None)
-
-            elif mode == "chacha20":
-                if len(encrypted_data) < 32:  # 16 (salt) + 16 (nonce)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                nonce = encrypted_data[16:32]
-                ciphertext = encrypted_data[32:]
-                
-                key = self._derive_key(password, salt, 256)  # Force 256-bit key for ChaCha20
-                cipher = Cipher(algorithms.ChaCha20(key, nonce), None)
-                decryptor = cipher.decryptor()
-                return decryptor.update(ciphertext) + decryptor.finalize()
-            else:
-                raise ValueError(f"Unsupported ChaCha20 mode: {mode}")
-
-        except Exception as e:
-            logger.error(f"ChaCha20 decryption error: {str(e)}")
-            raise ValueError(f"Decryption failed: {str(e)}")
-
-    def rsa_encrypt(self, plaintext: bytes, public_key: str) -> bytes:
-        try:
-            # Load public key
-            public_key_bytes = public_key.encode('utf-8')
-            public_key_obj = serialization.load_pem_public_key(public_key_bytes)
-            
-            # Encrypt
-            ciphertext = public_key_obj.encrypt(
-                plaintext,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-                    label=None
-                )
-            )
-            return ciphertext
-
-        except Exception as e:
-            logger.error(f"RSA encryption error: {str(e)}")
-            raise
-
-    def rsa_decrypt(self, ciphertext: bytes, private_key: str) -> bytes:
-        try:
-            # Load private key
-            private_key_bytes = private_key.encode('utf-8')
-            private_key_obj = serialization.load_pem_private_key(
-                private_key_bytes,
-                password=None
-            )
-            
-            # Decrypt
-            plaintext = private_key_obj.decrypt(
-                ciphertext,
-                padding.OAEP(
-                    mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                    algorithm=hashes.SHA256(),
-                    label=None
-                )
-            )
-            return plaintext
-
-        except Exception as e:
-            logger.error(f"RSA decryption error: {str(e)}")
-            raise ValueError(f"Decryption failed: {str(e)}")
-
-    def triple_des_encrypt(self, plaintext: bytes, password: str, key_size: int, mode: str, 
-                          key_option: str, key1: str, key2: str = None, key3: str = None, 
-                          iv: str = None) -> bytes:
-        try:
-
-
-            salt = os.urandom(16)
-            
-            # Derive keys based on key option
-            if key_option == "one":
-                key = self._derive_key(password, salt, 64)  # 56-bit effective key size
-                keys = [key] * 3
-            elif key_option == "two":
-                if not key2:
-                    raise ValueError("Second key required for 2-key mode")
-                try:
-                    key1_bytes = binascii.unhexlify(key1)
-                    key2_bytes = binascii.unhexlify(key2)
-                    if len(key1_bytes) != 8 or len(key2_bytes) != 8:
-                        raise ValueError("Keys must be 8 bytes (64 bits) each")
-                    keys = [key1_bytes, key2_bytes, key1_bytes]
-                except Exception as e:
-                    raise ValueError(f"Invalid key format: {str(e)}")
-            else:  # three keys
-                if not key2 or not key3:
-                    raise ValueError("All three keys required for 3-key mode")
-                try:
-                    key1_bytes = binascii.unhexlify(key1)
-                    key2_bytes = binascii.unhexlify(key2)
-                    key3_bytes = binascii.unhexlify(key3)
-                    if len(key1_bytes) != 8 or len(key2_bytes) != 8 or len(key3_bytes) != 8:
-                        raise ValueError("Keys must be 8 bytes (64 bits) each")
-                    keys = [key1_bytes, key2_bytes, key3_bytes]
-                except Exception as e:
-                    raise ValueError(f"Invalid key format: {str(e)}")
-
-            # Handle IV
-            if mode == "cbc":
-                if iv:
-                    try:
-                        iv_bytes = binascii.unhexlify(iv)
-                        if len(iv_bytes) != 8:
-                            raise ValueError("IV must be 8 bytes (16 hex characters)")
-                    except Exception as e:
-                        raise ValueError(f"Invalid IV format: {str(e)}")
+                if apply_to == "partial" and file_type.startswith("image/"):
+                    regions = request_data.get("image_regions", [])
+                    if not regions:
+                        raise ValueError("No image regions specified for partial processing")
+                    
+                    # Process each region
+                    processed_data = file_content
+                    for region in regions:
+                        processed_data = self._process_image_region(
+                            processed_data, region, action, algorithm, key
+                        )
+                    
+                    result = base64.b64encode(processed_data).decode()
                 else:
-                    iv_bytes = os.urandom(8)
+                    # Full file processing
+                    if action == "hash":
+                        if algorithm == "SHA-256":
+                            hash_obj = hashlib.sha256(file_content)
+                        elif algorithm == "BLAKE3":
+                            hash_obj = hashlib.blake2b(file_content)
+                        else:
+                            raise ValueError(f"Unsupported hash algorithm: {algorithm}")
+                        return {
+                            "success": True,
+                            "message": f"File hashed successfully",
+                            "hash": hash_obj.hexdigest(),
+                            "fileName": file_name
+                        }
+                    
+                    # Encryption/Decryption
+                    if algorithm == "AES":
+                        key_bytes = self._derive_key(key, 256)
+                        cipher = AES.new(key_bytes, AES.MODE_CBC)
+                        if action == "encrypt":
+                            ct_bytes = cipher.encrypt(pad(file_content, AES.block_size))
+                            result = base64.b64encode(cipher.iv + ct_bytes).decode()
+                        else:  # decrypt
+                            iv = file_content[:16]
+                            ct = file_content[16:]
+                            cipher = AES.new(key_bytes, AES.MODE_CBC, iv)
+                            result = base64.b64encode(unpad(cipher.decrypt(ct), AES.block_size)).decode()
+                    
+                    elif algorithm == "ChaCha20":
+                        key_bytes = self._derive_key(key, 256)
+                        nonce = os.urandom(12)
+                        cipher = ChaCha20.new(key=key_bytes, nonce=nonce)
+                        if action == "encrypt":
+                            ct_bytes = cipher.encrypt(file_content)
+                            result = base64.b64encode(nonce + ct_bytes).decode()
+                        else:  # decrypt
+                            nonce = file_content[:12]
+                            ct = file_content[12:]
+                            cipher = ChaCha20.new(key=key_bytes, nonce=nonce)
+                            result = base64.b64encode(cipher.decrypt(ct)).decode()
+                    
+                    elif algorithm == "RC4":
+                        key_bytes = key.encode()
+                        cipher = ARC4.new(key_bytes)
+                        result = base64.b64encode(cipher.encrypt(file_content)).decode()
+                    
+                    else:
+                        raise ValueError(f"Unsupported algorithm: {algorithm}")
                 
-                # Add PKCS7 padding for CBC mode
-                padded_data = self._pad_data(plaintext, block_size=8)
-                cipher = Cipher(algorithms.TripleDES(b''.join(keys)), modes.CBC(iv_bytes))
-                encryptor = cipher.encryptor()
-                ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-                return salt + iv_bytes + ciphertext
-
-            else:  # ECB mode
-                # Add PKCS7 padding for ECB mode
-                padded_data = self._pad_data(plaintext, block_size=8)
-                cipher = Cipher(algorithms.TripleDES(b''.join(keys)), modes.ECB())
-                encryptor = cipher.encryptor()
-                ciphertext = encryptor.update(padded_data) + encryptor.finalize()
-                return salt + ciphertext
-
+                return {
+                    "success": True,
+                    "message": f"File {action}ed successfully",
+                    "processedContent": result,
+                    "fileName": f"{action}ed_{file_name}"
+                }
+        
         except Exception as e:
-            logger.error(f"Triple DES encryption error: {str(e)}")
-            raise
-
-    def triple_des_decrypt(self, encrypted_data: bytes, password: str, key_size: int, mode: str,
-                          key_option: str, key1: str, key2: str = None, key3: str = None) -> bytes:
-        try:
-            if not encrypted_data:
-                raise ValueError("Encrypted data cannot be empty")
-            if not password:
-                raise ValueError("Password is required")
-            if not key1:
-                raise ValueError("Key1 is required")
-
-            if mode == "cbc":
-                if len(encrypted_data) < 24:  # 16 (salt) + 8 (iv)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                iv = encrypted_data[16:24]
-                ciphertext = encrypted_data[24:]
-                
-                # Derive keys based on key option
-                if key_option == "one":
-                    key = self._derive_key(password, salt, 64)
-                    keys = [key] * 3
-                elif key_option == "two":
-                    if not key2:
-                        raise ValueError("Second key required for 2-key mode")
-                    try:
-                        key1_bytes = binascii.unhexlify(key1)
-                        key2_bytes = binascii.unhexlify(key2)
-                        if len(key1_bytes) != 8 or len(key2_bytes) != 8:
-                            raise ValueError("Keys must be 8 bytes (64 bits) each")
-                        keys = [key1_bytes, key2_bytes, key1_bytes]
-                    except Exception as e:
-                        raise ValueError(f"Invalid key format: {str(e)}")
-                else:  # three keys
-                    if not key2 or not key3:
-                        raise ValueError("All three keys required for 3-key mode")
-                    try:
-                        key1_bytes = binascii.unhexlify(key1)
-                        key2_bytes = binascii.unhexlify(key2)
-                        key3_bytes = binascii.unhexlify(key3)
-                        if len(key1_bytes) != 8 or len(key2_bytes) != 8 or len(key3_bytes) != 8:
-                            raise ValueError("Keys must be 8 bytes (64 bits) each")
-                        keys = [key1_bytes, key2_bytes, key3_bytes]
-                    except Exception as e:
-                        raise ValueError(f"Invalid key format: {str(e)}")
-                
-                cipher = Cipher(algorithms.TripleDES(b''.join(keys)), modes.CBC(iv))
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-                return self._unpad_data(padded_data, block_size=8)
-
-            else:  # ECB mode
-                if len(encrypted_data) < 16:  # 16 (salt)
-                    raise ValueError("Encrypted data is too short")
-                salt = encrypted_data[:16]
-                ciphertext = encrypted_data[16:]
-                
-                # Derive keys based on key option
-                if key_option == "one":
-                    key = self._derive_key(password, salt, 64)
-                    keys = [key] * 3
-                elif key_option == "two":
-                    if not key2:
-                        raise ValueError("Second key required for 2-key mode")
-                    try:
-                        key1_bytes = binascii.unhexlify(key1)
-                        key2_bytes = binascii.unhexlify(key2)
-                        if len(key1_bytes) != 8 or len(key2_bytes) != 8:
-                            raise ValueError("Keys must be 8 bytes (64 bits) each")
-                        keys = [key1_bytes, key2_bytes, key1_bytes]
-                    except Exception as e:
-                        raise ValueError(f"Invalid key format: {str(e)}")
-                else:  # three keys
-                    if not key2 or not key3:
-                        raise ValueError("All three keys required for 3-key mode")
-                    try:
-                        key1_bytes = binascii.unhexlify(key1)
-                        key2_bytes = binascii.unhexlify(key2)
-                        key3_bytes = binascii.unhexlify(key3)
-                        if len(key1_bytes) != 8 or len(key2_bytes) != 8 or len(key3_bytes) != 8:
-                            raise ValueError("Keys must be 8 bytes (64 bits) each")
-                        keys = [key1_bytes, key2_bytes, key3_bytes]
-                    except Exception as e:
-                        raise ValueError(f"Invalid key format: {str(e)}")
-                
-                cipher = Cipher(algorithms.TripleDES(b''.join(keys)), modes.ECB())
-                decryptor = cipher.decryptor()
-                padded_data = decryptor.update(ciphertext) + decryptor.finalize()
-                return self._unpad_data(padded_data, block_size=8)
-
-        except Exception as e:
-            logger.error(f"Triple DES decryption error: {str(e)}")
-            raise ValueError(f"Decryption failed: {str(e)}")
-
-    def _handle_partial_encryption(self, full_text: str, selected_text: str, start: int, end: int, 
-                                 encrypt_func, *args, **kwargs) -> str:
-        """Helper method to handle partial encryption of text"""
-        try:
-            # Encrypt the selected portion
-            selected_bytes = selected_text.encode('utf-8')
-            encrypted_bytes = encrypt_func(selected_bytes, *args, **kwargs)
-            encrypted_text = base64.b64encode(encrypted_bytes).decode('utf-8')
-            
-            # Combine the parts
-            result = full_text[:start] + encrypted_text + full_text[end:]
-            return result
-        except Exception as e:
-            logger.error(f"Partial encryption error: {str(e)}")
-            raise
-
-    def _handle_partial_decryption(self, full_text: str, start: int, end: int,
-                                 decrypt_func, *args, **kwargs) -> str:
-        """Helper method to handle partial decryption of text"""
-        try:
-            # Extract and decode the encrypted portion
-            encrypted_text = full_text[start:end]
-            try:
-                encrypted_bytes = base64.b64decode(encrypted_text)
-            except Exception as e:
-                logger.error(f"Failed to decode base64: {str(e)}")
-                raise ValueError("Invalid encrypted text format")
-            
-            # Decrypt the portion
-            decrypted_bytes = decrypt_func(encrypted_bytes, *args, **kwargs)
-            try:
-                decrypted_text = decrypted_bytes.decode('utf-8')
-            except UnicodeDecodeError:
-                logger.error("Failed to decode decrypted bytes as UTF-8")
-                raise ValueError("Decrypted data is not valid text")
-            
-            # Combine the parts
-            result = full_text[:start] + decrypted_text + full_text[end:]
-            return result
-        except Exception as e:
-            logger.error(f"Partial decryption error: {str(e)}")
-            raise ValueError(f"Decryption failed: {str(e)}")
-
-    def partial_aes_encrypt(self, full_text: str, selected_text: str, start: int, end: int,
-                          password: str, key_size: int, mode: str, iv: str = None) -> str:
-        """Partially encrypt text using AES"""
-        print(full_text, selected_text, start, end, password, key_size, mode, iv)
-        return self._handle_partial_encryption(
-            full_text, selected_text, start, end,
-            self.aes_encrypt, password, key_size, mode, iv
-        )
-
-    def partial_aes_decrypt(self, full_text: str, start: int, end: int,
-                          password: str, key_size: int, mode: str) -> str:
-        """Partially decrypt text using AES"""
-        return self._handle_partial_decryption(
-            full_text, start, end,
-            self.aes_decrypt, password, key_size, mode
-        )
-
-    def partial_chacha20_encrypt(self, full_text: str, selected_text: str, start: int, end: int,
-                               password: str, key_size: int, mode: str, nonce: str = None) -> str:
-        """Partially encrypt text using ChaCha20"""
-        return self._handle_partial_encryption(
-            full_text, selected_text, start, end,
-            self.chacha20_encrypt, password, key_size, mode, nonce
-        )
-
-    def partial_chacha20_decrypt(self, full_text: str, start: int, end: int,
-                               password: str, key_size: int, mode: str) -> str:
-        """Partially decrypt text using ChaCha20"""
-        return self._handle_partial_decryption(
-            full_text, start, end,
-            self.chacha20_decrypt, password, key_size, mode
-        )
-
-    def partial_rsa_encrypt(self, full_text: str, selected_text: str, start: int, end: int,
-                          public_key: str) -> str:
-        """Partially encrypt text using RSA"""
-        return self._handle_partial_encryption(
-            full_text, selected_text, start, end,
-            self.rsa_encrypt, public_key
-        )
-
-    def partial_rsa_decrypt(self, full_text: str, start: int, end: int,
-                          private_key: str) -> str:
-        """Partially decrypt text using RSA"""
-        return self._handle_partial_decryption(
-            full_text, start, end,
-            self.rsa_decrypt, private_key
-        )
-
-    def partial_triple_des_encrypt(self, full_text: str, selected_text: str, start: int, end: int,
-                                 password: str, key_size: int, mode: str, key_option: str,
-                                 key1: str, key2: str = None, key3: str = None,
-                                 iv: str = None) -> str:
-        """Partially encrypt text using Triple DES"""
-        return self._handle_partial_encryption(
-            full_text, selected_text, start, end,
-            self.triple_des_encrypt, password, key_size, mode, key_option,
-            key1, key2, key3, iv
-        )
-
-    def partial_triple_des_decrypt(self, full_text: str, start: int, end: int,
-                                 password: str, key_size: int, mode: str, key_option: str,
-                                 key1: str, key2: str = None, key3: str = None) -> str:
-        """Partially decrypt text using Triple DES"""
-        return self._handle_partial_decryption(
-            full_text, start, end,
-            self.triple_des_decrypt, password, key_size, mode, key_option,
-            key1, key2, key3
-        )
+            logger.error(f"Error processing file: {str(e)}")
+            return {
+                "success": False,
+                "message": str(e)
+            }

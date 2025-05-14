@@ -50,31 +50,42 @@ export async function processWithBackend(
       partialEncryption: partialParams ? {
         startByte: partialParams.startByte,
         endByte: partialParams.endByte,
-        imageRegions: partialParams.imageRegions,
+        imageRegions: partialParams.imageRegions?.map(region => ({
+          x: Math.round(region.x),
+          y: Math.round(region.y),
+          width: Math.round(region.width),
+          height: Math.round(region.height)
+        }))
       } : undefined,
     }
 
     // Log the request details (excluding the actual content for security)
     console.log("Backend Request Details:", {
-    content,
       action,
       algorithm,
       fileName,
       fileType,
       hasKey: !!key,
-      key,
       hasPrivateKey: !!privateKey,
       contentLength: content instanceof Buffer ? content.length : content.length,
       contentType: content instanceof Buffer ? "Buffer" : typeof content,
       partialEncryption: partialParams ? {
         startByte: partialParams.startByte,
         endByte: partialParams.endByte,
-        imageRegions: partialParams.imageRegions,
+        imageRegions: partialParams.imageRegions?.map(region => ({
+          x: Math.round(region.x),
+          y: Math.round(region.y),
+          width: Math.round(region.width),
+          height: Math.round(region.height)
+        }))
       } : undefined,
     })
 
     const response = await fetch("http://localhost:8000/api/encrypt", {
       method: "POST",
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(requestBody),
     })
 

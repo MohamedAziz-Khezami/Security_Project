@@ -1,11 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import router as api_router
-from app.core.config import settings
+from .api.routes import router
+import logging
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Create FastAPI app
 app = FastAPI(
-    title="SecureCrypt API",
-    description="API for file and image encryption/decryption",
+    title="Security Project API",
+    description="API for encryption, decryption, and hashing operations",
     version="1.0.0"
 )
 
@@ -19,8 +26,8 @@ app.add_middleware(
 )
 
 # Include API routes
-app.include_router(api_router, prefix="/api")
+app.include_router(router, prefix="/api")
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to SecureCrypt API"} 
+    return {"message": "Welcome to the Security Project API"} 

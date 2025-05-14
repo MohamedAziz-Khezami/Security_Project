@@ -12,14 +12,20 @@ interface ImageRegion {
 interface ImageEditorProps {
   imageUrl: string
   onRegionsChange: (regions: ImageRegion[]) => void
+  selectedRegions?: ImageRegion[]
 }
 
-export function ImageEditor({ imageUrl, onRegionsChange }: ImageEditorProps) {
-  const [regions, setRegions] = useState<ImageRegion[]>([])
+export function ImageEditor({ imageUrl, onRegionsChange, selectedRegions = [] }: ImageEditorProps) {
+  const [regions, setRegions] = useState<ImageRegion[]>(selectedRegions)
   const [isDrawing, setIsDrawing] = useState(false)
   const [startPoint, setStartPoint] = useState({ x: 0, y: 0 })
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
+
+  // Update regions when selectedRegions prop changes
+  useEffect(() => {
+    setRegions(selectedRegions)
+  }, [selectedRegions])
 
   useEffect(() => {
     const image = new Image()
@@ -36,6 +42,15 @@ export function ImageEditor({ imageUrl, onRegionsChange }: ImageEditorProps) {
       }
     }
   }, [imageUrl])
+
+  // Draw regions on canvas
+  const drawRegions = (ctx: CanvasRenderingContext2D) => {
+    regions.forEach(region => {
+      ctx.strokeStyle = "#00ff00"
+      ctx.lineWidth = 2
+      ctx.strokeRect(region.x, region.y, region.width, region.height)
+    })
+  }
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -67,11 +82,7 @@ export function ImageEditor({ imageUrl, onRegionsChange }: ImageEditorProps) {
     }
 
     // Draw existing regions
-    regions.forEach(region => {
-      ctx.strokeStyle = "#00ff00"
-      ctx.lineWidth = 2
-      ctx.strokeRect(region.x, region.y, region.width, region.height)
-    })
+    drawRegions(ctx)
 
     // Draw current selection
     ctx.strokeStyle = "#ff0000"
@@ -99,8 +110,9 @@ export function ImageEditor({ imageUrl, onRegionsChange }: ImageEditorProps) {
       height: Math.abs(endY - startPoint.y)
     }
 
-    setRegions([...regions, newRegion])
-    onRegionsChange([...regions, newRegion])
+    const updatedRegions = [...regions, newRegion]
+    setRegions(updatedRegions)
+    onRegionsChange(updatedRegions)
     setIsDrawing(false)
   }
 
@@ -111,40 +123,7 @@ export function ImageEditor({ imageUrl, onRegionsChange }: ImageEditorProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="relative">
-        <canvas
-          ref={canvasRef}
-          className="border border-gray-200 rounded-lg"
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-        />
-        <img
-          ref={imageRef}
-          src={imageUrl}
-          alt="Source"
-          className="hidden"
-        />
-      </div>
-      
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Selected Regions:</h3>
-        {regions.map((region, index) => (
-          <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
-            <span className="text-sm">
-              Region {index + 1}: ({region.x}, {region.y}) - {region.width}x{region.height}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => removeRegion(index)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-      </div>
+    <div className="">
     </div>
   )
 } 

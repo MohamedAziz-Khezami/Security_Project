@@ -79,9 +79,9 @@ export function SecureTransfer() {
   const [showPrivateKey, setShowPrivateKey] = useState(false)
   const [generatingKeys, setGeneratingKeys] = useState(false)
   const [keysCopied, setKeysCopied] = useState<"public" | "private" | null>(null)
+  const [selectedTextRange, setSelectedTextRange] = useState<{ start: number; end: number } | null>(null)
   const [selectedRegions, setSelectedRegions] = useState<ImageRegion[]>([])
-  const [startByte, setStartByte] = useState(0)
-  const [endByte, setEndByte] = useState(0)
+  const [selectedByteRange, setSelectedByteRange] = useState<{ start: number; end: number } | null>(null)
 
   // Show intro guide on first load
   useEffect(() => {
@@ -173,6 +173,37 @@ export function SecureTransfer() {
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInputText(e.target.value)
     setResult(null)
+    // Reset text selection when text changes
+    setSelectedTextRange(null)
+  }
+
+  const handleTextSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const textArea = e.currentTarget
+    const start = textArea.selectionStart
+    const end = textArea.selectionEnd
+    console.log("Text selection event:", { start, end, text: textArea.value.substring(start, end) })
+    
+    if (start !== end) {
+      setSelectedTextRange({ start, end })
+      console.log("Updated selectedTextRange:", { start, end })
+    } else {
+      setSelectedTextRange(null)
+      console.log("Cleared selectedTextRange")
+    }
+  }
+
+  const handleByteRangeChange = (start: number, end: number) => {
+    console.log("Byte range change:", { start, end })
+    if (!isNaN(start) && !isNaN(end) && start >= 0 && end >= 0) {
+      setSelectedByteRange({ start, end })
+      console.log("Updated selectedByteRange:", { start, end })
+    } else {
+      console.log("Invalid byte range values:", { start, end })
+    }
+  }
+
+  const handleRegionsChange = (regions: ImageRegion[]) => {
+    setSelectedRegions(regions)
   }
 
   const handleProcess = async () => {
@@ -188,24 +219,53 @@ export function SecureTransfer() {
       // Prepare partial encryption parameters if needed
       let partialParams: PartialEncryptionParams | undefined
       if (applyTo === "partial") {
-        if (fileInfo.type === "image") {
-          // For images, we'll use the selected regions from the image editor
-          const selectedRegions = getSelectedImageRegions()
-          if (selectedRegions.length > 0) {
-            partialParams = {
-              imageRegions: selectedRegions
-            }
-          }
-        } else {
-          // For other files, we'll use byte range
-          const fileSize = fileInfo.size
-         // const startByte = Math.floor(fileSize * 0.25) // Example: encrypt middle 50%
-          //const endByte = Math.floor(fileSize * 0.75)
+        console.log("Processing with partial mode. Current selections:", {
+          inputMode,
+          fileType: fileInfo.type,
+          selectedTextRange,
+          selectedByteRange,
+          selectedRegions
+        })
+
+        if (fileInfo.type === "image" && selectedRegions && selectedRegions.length > 0) {
+          // For images, use the selected regions
+          console.log("Using image regions for processing:", selectedRegions)
           partialParams = {
-            startByte,
-            endByte
+            imageRegions: selectedRegions.map(region => ({
+              x: Math.round(region.x),
+              y: Math.round(region.y),
+              width: Math.round(region.width),
+              height: Math.round(region.height)
+            }))
+          }
+          console.log("Formatted image regions:", partialParams.imageRegions)
+        } else if (inputMode === "text" && selectedTextRange) {
+          // For text input, use the stored selected text range
+          console.log("Using text selection for processing:", selectedTextRange)
+          partialParams = {
+            startByte: selectedTextRange.start,
+            endByte: selectedTextRange.end
+          }
+        } else if (selectedByteRange) {
+          // For other files, use the stored byte range
+          console.log("Using byte range for processing:", selectedByteRange)
+          partialParams = {
+            startByte: selectedByteRange.start,
+            endByte: selectedByteRange.end
           }
         }
+
+        if (!partialParams) {
+          console.warn("Partial mode enabled but no valid selections found")
+        }
+
+        // Log the final partial parameters
+        console.log("Final partial parameters being sent:", {
+          applyTo,
+          inputMode,
+          fileType: fileInfo.type,
+          partialParams
+        })
       }
 
       const response = await processFile(
@@ -335,14 +395,6 @@ YDfRcHVf1MoAC8CN2GvYlz6QGBnfzHPf/mCOTy7snmrb3/7sPkYbADzleMQQbVeD
     }, 1000)
   }
 
-  function getSelectedImageRegions(): ImageRegion[] {
-    return selectedRegions
-  }
-
-  const handleRegionsChange = (regions: ImageRegion[]) => {
-    setSelectedRegions(regions)
-  }
-
   return (
     <div className="bg-white shadow-xl border border-blue-200 rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-2xl">
       {/* Header */}
@@ -403,7 +455,15 @@ YDfRcHVf1MoAC8CN2GvYlz6QGBnfzHPf/mCOTy7snmrb3/7sPkYbADzleMQQbVeD
                   className="min-h-[150px] font-mono text-sm"
                   value={inputText}
                   onChange={handleTextChange}
+                  onSelect={handleTextSelect}
                 />
+                {applyTo === "partial" && (
+                  <p className="text-sm text-gray-500 mt-2">
+                    {selectedTextRange 
+                      ? `Selected ${selectedTextRange.end - selectedTextRange.start} characters`
+                      : "Select text to process partially"}
+                  </p>
+                )}
               </div>
             </TabsContent>
           </Tabs>
@@ -427,17 +487,36 @@ YDfRcHVf1MoAC8CN2GvYlz6QGBnfzHPf/mCOTy7snmrb3/7sPkYbADzleMQQbVeD
                   fileInfo={fileInfo}
                   inputMode={inputMode}
                   inputText={inputText}
+                  onByteRangeChange={handleByteRangeChange}
+                  onSelectionsChange={(selections) => {
+                    console.log("Selections changed:", selections)
+                    // Only update if the selections have actually changed
+                    if (selections.textSelections) {
+                      const lastSelection = selections.textSelections[selections.textSelections.length - 1]
+                      if (lastSelection && (!selectedTextRange || 
+                          selectedTextRange.start !== lastSelection.start || 
+                          selectedTextRange.end !== lastSelection.end)) {
+                        setSelectedTextRange({
+                          start: lastSelection.start,
+                          end: lastSelection.end
+                        })
+                      }
+                    }
+                    if (selections.imageRegions) {
+                      if (JSON.stringify(selections.imageRegions) !== JSON.stringify(selectedRegions)) {
+                        setSelectedRegions(selections.imageRegions)
+                      }
+                    }
+                  }}
                 />
                 
                 {applyTo === "partial" && fileInfo.type === "image" && fileInfo.file && (
                   <div className="mt-4">
-                    <h3 className="text-lg font-medium mb-2">Select Regions to {action === "encrypt" ? "Encrypt" : "Decrypt"}</h3>
-                    <p className="text-sm text-gray-500 mb-4">
-                      Click and drag on the image to select regions. You can select multiple regions.
-                    </p>
+            
                     <ImageEditor
                       imageUrl={URL.createObjectURL(fileInfo.file)}
                       onRegionsChange={handleRegionsChange}
+                      selectedRegions={selectedRegions}
                     />
                   </div>
                 )}

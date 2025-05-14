@@ -35,7 +35,7 @@ export async function processFile(
   if (typeof fileInfo === "string") {
     // Handle text input
     formData.append("content", fileInfo)
-    formData.append("isText", "true")
+    formData.append("is_text", "true")
     console.log("Sending text input:", { contentLength: fileInfo.length })
   } else {
     // Handle file input
@@ -57,26 +57,54 @@ export async function processFile(
       })
       formData.append("content", contentStr)
     }
-    formData.append("fileName", fileInfo.name)
-    formData.append("fileType", fileInfo.type || "")
+    formData.append("file_name", fileInfo.name)
+    formData.append("file_type", fileInfo.type || "")
   }
 
   formData.append("action", action)
   formData.append("algorithm", algorithm)
-  formData.append("applyTo", applyTo)
+  formData.append("apply_to", applyTo)
   if (key) formData.append("key", key)
-  if (privateKey) formData.append("privateKey", privateKey)
+  if (privateKey) formData.append("private_key", privateKey)
 
   // Add partial encryption parameters if they exist
   if (applyTo === "partial" && partialParams) {
-    if (partialParams.startByte !== undefined) {
-      formData.append("startByte", partialParams.startByte.toString())
+    console.log("Adding partial parameters to form data:", partialParams)
+    
+    if (partialParams.startByte !== undefined && partialParams.endByte !== undefined) {
+      formData.append("start_byte", partialParams.startByte.toString())
+      formData.append("end_byte", partialParams.endByte.toString())
+      console.log("Added byte range to form data:", {
+        start: partialParams.startByte,
+        end: partialParams.endByte
+      })
     }
-    if (partialParams.endByte !== undefined) {
-      formData.append("endByte", partialParams.endByte.toString())
-    }
+    
     if (partialParams.imageRegions && partialParams.imageRegions.length > 0) {
-      formData.append("imageRegions", JSON.stringify(partialParams.imageRegions))
+      // Convert all regions to a single dictionary
+      const regionsDict = partialParams.imageRegions.reduce((acc, region, index) => {
+        acc[`region_${index}`] = {
+          x: Math.round(region.x),
+          y: Math.round(region.y),
+          width: Math.round(region.width),
+          height: Math.round(region.height)
+        }
+        return acc
+      }, {} as Record<string, { x: number; y: number; width: number; height: number }>)
+
+      // Add the regions dictionary as a single entry
+      formData.append("image_regions", JSON.stringify(regionsDict))
+      console.log("Added image regions dictionary to form data:", regionsDict)
+    }
+  }
+
+  // Log the complete form data
+  console.log("Complete form data entries:")
+  for (const [key, value] of formData.entries()) {
+    if (key.startsWith('image_region_')) {
+      console.log(`${key}:`, JSON.parse(value as string))
+    } else {
+      console.log(`${key}:`, value)
     }
   }
 
@@ -92,7 +120,8 @@ export async function processFile(
     partialParams: applyTo === "partial" ? {
       startByte: partialParams?.startByte,
       endByte: partialParams?.endByte,
-      imageRegions: partialParams?.imageRegions
+      imageRegions: partialParams?.imageRegions,
+      totalRegions: partialParams?.imageRegions?.length
     } : undefined
   })
 
@@ -101,9 +130,13 @@ export async function processFile(
       method: "POST",
       body: formData,
     })
-    console.log(response.json())
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      const errorData = await response.json().catch(() => null)
+      throw new Error(
+        errorData?.detail || 
+        `HTTP error! status: ${response.status}`
+      )
     }
 
     const data = await response.json()
@@ -111,6 +144,9 @@ export async function processFile(
     return data
   } catch (error) {
     console.error("Error processing file:", error)
-    throw error
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : "An unknown error occurred"
+    }
   }
 } 

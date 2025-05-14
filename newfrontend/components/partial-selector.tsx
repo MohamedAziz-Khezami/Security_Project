@@ -1,12 +1,10 @@
 "use client"
 
-import type React from "react"
-
+import { useState, useRef, useEffect } from "react"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import type { FileInfo } from "./secure-transfer"
 import { Square, Copy, Save, Trash2, Plus } from "lucide-react"
-import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { DocumentTextExtractor } from "./document-text-extractor"
 import { Badge } from "@/components/ui/badge"
@@ -14,47 +12,77 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
+interface TextSelection {
+  text: string
+  start: number
+  end: number
+  length: number
+}
+
+interface ImageRegion {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface ImageSelection {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface DocumentSelection {
+  text: string
+  pageNumber?: number
+  position?: any
+  startIndex?: number
+  endIndex?: number
+  length?: number
+}
+
 interface PartialSelectorProps {
   applyTo: "full" | "partial"
   onChange: (applyTo: "full" | "partial") => void
   fileInfo: FileInfo
   inputMode: "file" | "text"
   inputText: string
+  onByteRangeChange?: (start: number, end: number) => void
+  onSelectionsChange?: (selections: {
+    textSelections?: Array<TextSelection>;
+    imageRegions?: Array<ImageSelection>;
+  }) => void;
 }
 
-export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputText }: PartialSelectorProps) {
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      div: React.DetailedHTMLProps<React.HTMLAttributes<HTMLDivElement>, HTMLDivElement>;
+      span: React.DetailedHTMLProps<React.HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>;
+      p: React.DetailedHTMLProps<React.HTMLAttributes<HTMLParagraphElement>, HTMLParagraphElement>;
+      h3: React.DetailedHTMLProps<React.HTMLAttributes<HTMLHeadingElement>, HTMLHeadingElement>;
+    }
+  }
+}
+
+export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputText, onByteRangeChange, onSelectionsChange }: PartialSelectorProps) {
   // State for text selections
-  const [textSelections, setTextSelections] = useState<
-    {
-      text: string
-      start: number
-      end: number
-      length: number
-    }[]
-  >([])
+  const [textSelections, setTextSelections] = useState<TextSelection[]>([])
 
   // State for image selections
-  const [imageSelections, setImageSelections] = useState<{ x: number; y: number; width: number; height: number }[]>([])
+  const [imageSelections, setImageSelections] = useState<ImageSelection[]>([])
 
   // State for manual coordinate input
-  const [manualCoords, setManualCoords] = useState({ x: 0, y: 0, width: 100, height: 100 })
+  const [manualCoords, setManualCoords] = useState<ImageSelection>({ x: 0, y: 0, width: 100, height: 100 })
 
   // State for rectangle selection
   const [isSelecting, setIsSelecting] = useState(false)
   const [startPos, setStartPos] = useState({ x: 0, y: 0 })
-  const [currentRect, setCurrentRect] = useState({ x: 0, y: 0, width: 0, height: 0 })
+  const [currentRect, setCurrentRect] = useState<ImageSelection>({ x: 0, y: 0, width: 0, height: 0 })
 
   // State for document selections
-  const [documentSelections, setDocumentSelections] = useState<
-    Array<{
-      text: string
-      pageNumber?: number
-      position?: any
-      startIndex?: number
-      endIndex?: number
-      length?: number
-    }>
-  >([])
+  const [documentSelections, setDocumentSelections] = useState<DocumentSelection[]>([])
 
   // State for copied coordinates
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
@@ -90,11 +118,18 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
         const length = text.length
 
         // Check if this selection already exists to prevent duplication
-        const isDuplicate = textSelections.some((sel) => sel.start === start && sel.end === end && sel.text === text)
+        const isDuplicate = textSelections.some((sel: TextSelection) => sel.start === start && sel.end === end && sel.text === text)
 
         if (!isDuplicate) {
-          // Append the new selection to existing ones (don't replace)
-          setTextSelections([...textSelections, { text, start, end, length }])
+          const newSelections = [...textSelections, { text, start, end, length }]
+          setTextSelections(newSelections)
+          // Only call onSelectionsChange if it exists and the selections have actually changed
+          if (onSelectionsChange && JSON.stringify(newSelections) !== JSON.stringify(textSelections)) {
+            onSelectionsChange({
+              textSelections: newSelections,
+              imageRegions: imageSelections
+            })
+          }
         }
       }
     }
@@ -116,22 +151,12 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
   }
 
   // Handle document text selection
-  const handleDocumentTextSelection = (
-    selections: Array<{
-      text: string
-      pageNumber?: number
-      position?: any
-      startIndex?: number
-      endIndex?: number
-      length?: number
-    }>,
-  ) => {
-    // Update the document selections state - append, don't replace
+  const handleDocumentTextSelection = (selections: DocumentSelection[]) => {
     setDocumentSelections(selections)
   }
 
   // Handle rectangle selection start
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!imageRef.current || applyTo !== "partial") return
 
     const rect = imageRef.current.getBoundingClientRect()
@@ -144,7 +169,7 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
   }
 
   // Handle rectangle selection movement
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isSelecting || !imageRef.current) return
 
     const rect = imageRef.current.getBoundingClientRect()
@@ -172,7 +197,7 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
 
       // Check for duplicate selection
       const isDuplicate = imageSelections.some(
-        (sel) =>
+        (sel: ImageSelection) =>
           sel.x === roundedRect.x &&
           sel.y === roundedRect.y &&
           sel.width === roundedRect.width &&
@@ -206,14 +231,12 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
 
   // Handle saving all selections
   const handleSaveSelections = () => {
-    // In a real app, this would save to a database or file
-    // For now, we'll just set a state to indicate they've been "saved"
     setSelectionsSaved(true)
     setTimeout(() => setSelectionsSaved(false), 3000)
   }
 
   // Handle manual coordinate input change
-  const handleManualCoordsChange = (field: "x" | "y" | "width" | "height", value: string) => {
+  const handleManualCoordsChange = (field: keyof ImageSelection, value: string) => {
     const numValue = Number.parseInt(value, 10) || 0
     setManualCoords({
       ...manualCoords,
@@ -223,14 +246,12 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
 
   // Handle adding manual coordinates
   const handleAddManualCoords = () => {
-    // Validate coordinates
     if (manualCoords.width <= 0 || manualCoords.height <= 0) {
-      return // Don't add invalid coordinates
+      return
     }
 
-    // Check for duplicate selection
     const isDuplicate = imageSelections.some(
-      (sel) =>
+      (sel: ImageSelection) =>
         sel.x === manualCoords.x &&
         sel.y === manualCoords.y &&
         sel.width === manualCoords.width &&
@@ -238,11 +259,9 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
     )
 
     if (!isDuplicate) {
-      // Append the new selection to existing ones (don't replace)
       setImageSelections([...imageSelections, { ...manualCoords }])
     }
 
-    // Reset width and height but keep x and y for convenience
     setManualCoords({
       ...manualCoords,
       width: 100,
@@ -253,6 +272,92 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
   // Clear all text selections
   const handleClearAllTextSelections = () => {
     setTextSelections([])
+  }
+
+  // Handle byte range change
+  const handleByteRangeChange = (start: number, end: number) => {
+    console.log("PartialSelector: Byte range change:", { start, end })
+    if (onByteRangeChange && !isNaN(start) && !isNaN(end)) {
+      onByteRangeChange(start, end)
+    }
+  }
+
+  // Handle regions change
+  const handleRegionsChange = (regions: ImageRegion[]) => {
+    // Only update if the regions have actually changed
+    if (JSON.stringify(regions) !== JSON.stringify(imageSelections)) {
+      setImageSelections(regions)
+      if (onSelectionsChange) {
+        onSelectionsChange({
+          textSelections: textSelections,
+          imageRegions: regions
+        })
+      }
+    }
+  }
+
+  // Add byte range input for non-text/image files
+  const renderByteRangeInput = () => {
+    if (inputMode === "file" && fileInfo.type !== "text" && fileInfo.type !== "image" && fileInfo.file) {
+      return (
+        <div className="space-y-4 mt-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Select byte range to process:</p>
+            <p className="text-xs text-gray-500">
+              Enter start and end byte positions
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="start-byte" className="text-xs mb-1 block">
+                Start Byte
+              </Label>
+              <Input
+                id="start-byte"
+                type="number"
+                min="0"
+                max={fileInfo.size}
+                onChange={(e) => {
+                  const start = parseInt(e.target.value)
+                  const endInput = document.getElementById("end-byte") as HTMLInputElement
+                  const end = parseInt(endInput.value)
+                  console.log("Start byte changed:", { start, end })
+                  if (!isNaN(start) && !isNaN(end)) {
+                    handleByteRangeChange(start, end)
+                  }
+                }}
+                className="h-8 text-sm"
+              />
+            </div>
+            <div>
+              <Label htmlFor="end-byte" className="text-xs mb-1 block">
+                End Byte
+              </Label>
+              <Input
+                id="end-byte"
+                type="number"
+                min="0"
+                max={fileInfo.size}
+                onChange={(e) => {
+                  const end = parseInt(e.target.value)
+                  const startInput = document.getElementById("start-byte") as HTMLInputElement
+                  const start = parseInt(startInput.value)
+                  console.log("End byte changed:", { start, end })
+                  if (!isNaN(start) && !isNaN(end)) {
+                    handleByteRangeChange(start, end)
+                  }
+                }}
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            File size: {fileInfo.size} bytes
+          </p>
+        </div>
+      )
+    }
+    return null
   }
 
   // Add effect for global mouse up
@@ -284,7 +389,18 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
         textRef.current.removeEventListener("mouseup", handleMouseUp)
       }
     }
-  }, [applyTo, textRef.current, inputMode, inputText, fileInfo.content, textSelections])
+  }, [applyTo, textRef.current, inputMode, inputText, fileInfo.content])
+
+  // Notify parent component of selection changes
+  useEffect(() => {
+    if (onSelectionsChange) {
+      const currentSelections = {
+        textSelections: textSelections.length > 0 ? textSelections : undefined,
+        imageRegions: imageSelections.length > 0 ? imageSelections : undefined
+      }
+      onSelectionsChange(currentSelections)
+    }
+  }, [textSelections, imageSelections, onSelectionsChange])
 
   // Render document content preview
   const renderDocumentContent = () => {
@@ -305,15 +421,15 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
     <div className="space-y-4">
       <RadioGroup
         value={applyTo}
-        onValueChange={(value) => onChange(value as "full" | "partial")}
+        onValueChange={(value: string) => onChange(value as "full" | "partial")}
         className="flex flex-col sm:flex-row gap-4"
       >
         <div className="flex items-center space-x-2 border rounded-lg p-4 cursor-pointer hover:bg-gray-50 transition-colors flex-1">
           <RadioGroupItem value="full" id="full" className="sr-only" />
           <Label
             htmlFor="full"
-            className={`flex items-center gap-3 cursor-pointer w-full ${
-              applyTo === "full" ? "text-blue-600 font-medium" : ""
+            className={`flex-1 cursor-pointer ${
+              applyTo === "full" ? "text-blue-600" : "text-gray-700"
             }`}
           >
             <span>Full {inputMode === "file" ? "File" : "Text"}</span>
@@ -324,8 +440,8 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
           <RadioGroupItem value="partial" id="partial" className="sr-only" />
           <Label
             htmlFor="partial"
-            className={`flex items-center gap-3 cursor-pointer w-full ${
-              applyTo === "partial" ? "text-blue-600 font-medium" : ""
+            className={`flex-1 cursor-pointer ${
+              applyTo === "partial" ? "text-blue-600" : "text-gray-700"
             }`}
           >
             <span>Partial (select sections)</span>
@@ -382,7 +498,9 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
                     chunks.push(
                       <span
                         key={`selection-${selection.start}`}
-                        className="bg-blue-200 rounded px-1 transition-colors hover:bg-blue-300"
+                        className="bg-blue-200 rounded px-1 transition-colors hover:bg-blue-300 text-selection"
+                        data-start={selection.start}
+                        data-end={selection.end}
                       >
                         {content.substring(selection.start, selection.end)}
                       </span>,
@@ -697,6 +815,8 @@ export function PartialSelector({ applyTo, onChange, fileInfo, inputMode, inputT
               </p>
             </div>
           )}
+
+          {renderByteRangeInput()}
         </div>
       )}
     </div>
