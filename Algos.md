@@ -1,168 +1,198 @@
-# Security Project - Encryption Algorithms Documentation
+## Security Project: Encryption Algorithms
 
-This project implements various encryption algorithms for both text and image encryption. Below is a detailed explanation of each algorithm and its parameters.
+This project collects a suite of encryption algorithms for robust text and image protection. It offers symmetric, asymmetric, and chaotic ciphers, complete with parameter validation and error handling, suitable for Python applications and FastAPI microservices.
+
+---
+
+### Table of Contents
+
+1. [Features](#features)
+
+2. [Supported Algorithms](#supported-algorithms)
+
+   * [AES (Advanced Encryption Standard)](#aes)
+   * [ECC (Elliptic Curve Cryptography)](#ecc)
+   * [RSA (Rivest–Shamir–Adleman)](#rsa)
+   * [3DES (Triple DES)](#3des)
+   * [RC4 (Rivest Cipher 4)](#rc4)
+   * [Logistic XOR (Chaotic Cipher)](#logistic-xor)
+3. [Security Considerations](#security-considerations)
+4. [Error Handling](#error-handling)
+5. [Dependencies](#dependencies)
+6. [License](#license)
+
+---
+
+## Features
+
+* **Versatile Modes**: Authenticated (GCM) and traditional (CBC, CTR, ECB).
+* **Asymmetric & Symmetric**: RSA, ECC, AES, 3DES, RC4, plus custom logistic map XOR.
+* **Text & Image Support**: Encrypt/decrypt raw data or image files (PNG, JPEG, BMP).
+* **API Ready**: Designed for integration with FastAPI endpoints.
+* **Robust Error Handling**: Pre-checks for parameters, key lengths, IV/nonce formats.
+
+---
+
+
 
 ## Supported Algorithms
 
-### 1. AES (Advanced Encryption Standard)
-AES is a symmetric encryption algorithm that supports multiple modes of operation.
+### AES (Advanced Encryption Standard)
 
-#### Parameters:
-- **Password**: String used to derive the encryption key
-- **Key Size**: 
-  - 128 bits
-  - 192 bits
-  - 256 bits
-- **Mode**: 
-  - `gcm` (Galois/Counter Mode) - Authenticated encryption
-  - `cbc` (Cipher Block Chaining) - Requires IV
-  - `ctr` (Counter) - Requires nonce
-  - `ecb` (Electronic Codebook) - Not recommended for secure applications
+AES is the industry standard for symmetric encryption, offering high performance and strong security.
 
-#### Additional Parameters:
-- **IV** (Initialization Vector): Required for CBC mode
-  - Must be 16 bytes (32 hex characters)
-- **Nonce**: Required for GCM and CTR modes
-  - GCM: 12 bytes (24 hex characters)
-  - CTR: 16 bytes (32 hex characters)
+**Use Cases**: Data-at-rest encryption, secure file storage, image privacy.
 
-### 2. ECC (Elliptic Curve Cryptography)  
-A public-key cryptographic system that offers high security with smaller key sizes, making it efficient for mobile and embedded devices.
+**Parameters**:
 
-#### Parameters:
-- **Private Key**: A randomly generated number used to generate the public key and decrypt messages.
-- **Public Key**: Derived from the private key and shared openly to encrypt messages or verify signatures.
-- **Curve**: Specifies the mathematical curve used (e.g., `secp256k1`, `secp256r1`)
-- **Nonce / Ephemeral Key** (used in ECDH/ECDSA): Random value used per operation to ensure forward secrecy and prevent replay attacks.
+* **password** (str): Passphrase; PBKDF2-derived key by default.
+* **key\_size** (int): 128, 192, or 256 bits.
+* **mode** (str):
 
+  * `gcm`: Authenticated encryption, returns (ciphertext, tag).
+  * `cbc`: Classic chaining mode, requires IV.
+  * `ctr`: Stream cipher mode, requires nonce.
+  * `ecb`: Electronic Codebook; insecure for repetitive data.
+* **iv** (hex, 16 bytes): Required for CBC.
+* **nonce** (hex):
 
-### 3. RSA (Rivest-Shamir-Adleman)
-An asymmetric encryption algorithm that uses public and private key pairs.
+  * 12 bytes for GCM.
+  * 16 bytes for CTR.
 
-#### Parameters:
-- **Public Key**: Required for encryption
-  - PEM format
-  - 2048-bit key size
-- **Private Key**: Required for decryption
-  - PEM format
-  - 2048-bit key size
+**Behavior**:
 
-### 4. Triple DES (3DES)
-A symmetric encryption algorithm that applies DES three times.
+* GCM mode automatically verifies authenticity; decryption fails if tag mismatch.
+* CBC/CTR modes do not provide authentication—consider HMAC if needed.
 
-#### Parameters:
-- **Password**: String used to derive the encryption key
-- **Key Option**:
-  - `one`: Single key used three times
-  - `two`: Two different keys (K1, K2, K1)
-  - `three`: Three different keys (K1, K2, K3)
-- **Mode**:
-  - `cbc`: Requires IV
-  - `ecb`: Not recommended for secure applications
-- **IV**: Required for CBC mode
-  - 8 bytes (16 hex characters)
+---
 
-### 5. RC4
-A stream cipher known for its simplicity and speed.
+### ECC (Elliptic Curve Cryptography)
 
-#### Parameters:
-- **RC4 Key**: String used as the encryption key
+ECC delivers asymmetric encryption with smaller key sizes and equivalent security to RSA.
 
-### 6. Logistic XOR
-A custom encryption method based on the logistic map chaotic system.
+**Use Cases**: Mobile/IoT secure channels, digital signatures, key exchange.
 
-#### Parameters:
-- **Initial Value**: Between 0 and 1 (excluding 0, 0.5, and 1)
-- **Parameter**: Between 3.57 and 4
-- **Password**: Optional, used to seed the chaotic system
+**Parameters**:
 
-## Image Encryption Features
+* **curve** (str): e.g., `secp256r1`, `secp384r1`.
+* **private\_key**: Generated via library; kept secret.
+* **public\_key**: Shared for encrypting or verifying.
+* **ephemeral\_key**: Per-message nonce for ECDH/ECDSA, ensuring forward secrecy.
 
-The project supports both full and partial image encryption:
+**Behavior**:
 
-### Full Image Encryption
-- Encrypts the entire image using any of the supported algorithms
-- Maintains image format and quality
-- Supports PNG format output
+* ECDH: Derives shared secret for symmetric encryption.
+* ECDSA: Signs data; signature length \~ twice curve size.
 
-### Partial Image Encryption
-- Encrypts specific regions of the image
-- Supports multiple regions
-- Region format: `x,y,width,height`
-- Maintains image quality in non-encrypted regions
+---
 
-### Auto-Decryption
-- Automatically detects encrypted regions in images
-- Uses statistical analysis to identify encrypted areas
-- Supports decryption of detected regions
+### RSA (Rivest–Shamir–Adleman)
+
+RSA is a foundational public-key algorithm, widely adopted for small payloads and key encapsulation.
+
+**Use Cases**: Secure key exchange, digital signatures, certificate-based systems.
+
+**Parameters**:
+
+* **key\_size** (int): 2048 or 3072 bits recommended.
+* **public\_key** (PEM): Used for encryption and signature verification.
+* **private\_key** (PEM): Used for decryption and signing.
+* **padding** (str): `OAEP` for encryption (recommended), `PSS` for signatures.
+
+**Behavior**:
+
+* Encryption limited by key size minus padding overhead (\~214 bytes for RSA-2048 + OAEP).
+* Slower than ECC for similar security; best used for small data or hybrid schemes.
+
+---
+
+### 3DES (Triple DES)
+
+Applies DES encryption three times for improved security over single DES.
+
+**Use Cases**: Legacy systems maintenance, compatibility layers.
+
+**Parameters**:
+
+* **password** (str): Passphrase for key derivation.
+* **key\_option** (str):
+
+  * `one`: K1=K2=K3 (weak).
+  * `two`: K1,K2,K1.
+  * `three`: K1,K2,K3 (strongest).
+* **mode** (str): `cbc` (requires IV) or `ecb`.
+* **iv** (hex, 8 bytes): Required for CBC.
+
+**Behavior**:
+
+* Keying option two and three mitigate meet-in-the-middle attacks.
+* Significantly slower than AES; use only for compatibility.
+
+---
+
+### RC4 (Rivest Cipher 4)
+
+A legacy stream cipher known for simplicity but deprecated due to biases in output.
+
+**Use Cases**: Historical analysis, legacy protocol support only.
+
+**Parameters**:
+
+* **key** (str): User-supplied passphrase or bytes.
+
+**Behavior**:
+
+* Avoid for new applications; known vulnerabilities (IV collisions, key biases).
+* No built-in authentication or integrity checks.
+
+---
+
+### Logistic XOR (Chaotic Cipher)
+
+A custom cipher leveraging the logistic map: `x_{n+1} = r * x_n * (1 - x_n)`.
+
+**Use Cases**: Experimental research, educational demonstration of chaos-based encryption.
+
+**Parameters**:
+
+* **initial\_value** (float): `0 < x0 < 1`, x0 ≠ 0.5.
+* **parameter** (float): `3.57 ≤ r ≤ 4.0`.
+* **password** (optional str): Seed to perturb x0 via hash.
+
+**Behavior**:
+
+* Generates a pseudorandom keystream by iterating the logistic map.
+* XORs plaintext bytes with scaled chaotic values.
+* Sensitive to parameter/leakage; not recommended for production.
+
+---
 
 ## Security Considerations
 
-1. **Key Management**:
-   - Always use strong passwords
-   - Keep private keys secure
-   - Use unique IVs/nonces for each encryption
+* **Key Management**: Enforce strong, unique passphrases; secure private key storage (HSM/KMS).
+* **Mode Selection**: Default to `gcm`/`oaep`; avoid `ecb`; rotate IVs/nonces per message.
+* **Key Sizes**: AES-256, RSA ≥2048 bits, ECC ≥256-bit curves.
 
-2. **Mode Selection**:
-   - Prefer authenticated modes (GCM, ChaCha20-Poly1305)
-   - Avoid ECB mode for sensitive data
-   - Use CBC or CTR with proper IV/nonce management
-
-3. **Key Sizes**:
-   - AES: Use 256-bit keys for maximum security
-   - RSA: 2048-bit keys provide good security
-   - ChaCha20: Always uses 256-bit keys
-
-## Usage Examples
-
-### Text Encryption
-```python
-# AES Encryption
-encrypted = encryption_service.aes_encrypt(
-    plaintext,
-    password="strong_password",
-    key_size=256,
-    mode="gcm",
-    nonce="random_nonce_here"
-)
-
-# RSA Encryption
-encrypted = encryption_service.rsa_encrypt(
-    plaintext,
-    public_key="-----BEGIN PUBLIC KEY-----\n..."
-)
-```
-
-### Image Encryption
-```python
-# Partial Image Encryption
-processed_image = image_service.partial_process_image(
-    image_data,
-    regions=[{"left": 0, "top": 0, "width": 100, "height": 100}],
-    operation="encrypt",
-    algorithm="aes",
-    password="strong_password",
-    key_size=256,
-    mode="gcm",
-    nonce="random_nonce_here"
-)
-```
+---
 
 ## Error Handling
 
-The system includes comprehensive error handling for:
-- Invalid parameters
-- Incorrect key sizes
-- Missing required parameters
-- Invalid IV/nonce formats
-- Decryption failures
-- Image processing errors
+* **Validation**: Checks for missing or malformed parameters.
+* **Key/IV Length**: Verifies length in bytes and hex format.
+* **Authentication**: Fails on GCM tag mismatch or signature verification errors.
+* **Image Errors**: Catches file I/O and format issues.
+
+---
 
 ## Dependencies
 
-- cryptography
-- pycryptodome
-- Pillow (PIL)
-- numpy
-- opencv-python (cv2)
-- fastapi 
+* **cryptography**: Core cryptographic primitives.
+* **pycryptodome**: Supplementary ciphers (3DES, RC4).
+* **Pillow**: Image file I/O.
+* **numpy**: Array and matrix operations.
+* **opencv-python**: Advanced image preprocessing.
+* **fastapi**: Web API framework.
+
+---
+
+

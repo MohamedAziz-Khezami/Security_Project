@@ -181,29 +181,7 @@ export function FileEncryptionGuide() {
                 </div>
               </div>
 
-              {/* Salting & Iteration */}
-              <div className="border rounded-lg p-4 space-y-2">
-                <h3 className="text-lg font-semibold">Salting & Iterations</h3>
-                <p className="text-sm text-gray-600">
-                  Enhance hash security for passwords by adding salts and multiple iterations.
-                </p>
-                <div className="space-y-2 mt-2">
-                  <h4 className="text-md font-medium">Salt:</h4>
-                  <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                    <li>Prevents rainbow table attacks</li>
-                    <li>Makes hash output unique per input</li>
-                    <li>Store the salt with the hash</li>
-                  </ul>
-                </div>
-                <div className="space-y-2 mt-2">
-                  <h4 className="text-md font-medium">Iterations:</h4>
-                  <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                    <li>Increases computational cost</li>
-                    <li>Slows down brute-force attacks</li>
-                    <li>Used in bcrypt, PBKDF2, Argon2</li>
-                  </ul>
-                </div>
-              </div>
+         
             </TabsContent>
           </Tabs>
         </ScrollArea>

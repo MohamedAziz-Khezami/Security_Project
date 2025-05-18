@@ -76,14 +76,15 @@ async def encrypt_file(
     Returns:
     - JSON with filename, processed data, and status message
     """
-    print(privateKey)
+    print(partialEncryption)
     try:
         # Read file content
         file_content = await file.read()
         logger.debug(f"File read - Size: {len(file_content)} bytes")
+        print(file_content)
         
         if operation == "encrypt":
-            if partialEncryption and file.filename.endswith(('.txt', '.pdf')):
+            if partialEncryption:
                 # Handle partial encryption for text files
                 full_text = file_content.decode('utf-8')
                 
@@ -107,6 +108,7 @@ async def encrypt_file(
                         password, keySize, mode, iv
                     )
                 elif algorithm == "ecc":
+                   
                     result = encryption_service.partial_ecc_encrypt(
                         full_text, selectedText, start_pos, end_pos,
                         publicKey, curve
@@ -144,6 +146,7 @@ async def encrypt_file(
                         iv
                     )
                 elif algorithm == "ecc":
+                
                     encrypted_data = encryption_service.ecc_encrypt(
                         file_content,
                         publicKey,
@@ -184,7 +187,7 @@ async def encrypt_file(
                 
         else:  # decrypt
             try:
-                if partialEncryption and file.filename.endswith(('.txt', '.pdf')):
+                if partialEncryption:
                     # Handle partial decryption for text files
                     full_text = file_content.decode('utf-8')
                     

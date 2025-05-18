@@ -468,7 +468,11 @@ class EncryptionService:
             # Encrypt the selected portion
             selected_bytes = selected_text.encode('utf-8')
             encrypted_bytes = encrypt_func(selected_bytes, *args, **kwargs)
-            encrypted_text = base64.b64encode(encrypted_bytes).decode('utf-8')
+            # If the result is a string (as with ecc_encrypt), don't re-encode
+            if isinstance(encrypted_bytes, str):
+                encrypted_text = encrypted_bytes
+            else:
+                encrypted_text = base64.b64encode(encrypted_bytes).decode('utf-8')
             
             # Combine the parts
             result = full_text[:start] + encrypted_text + full_text[end:]
@@ -477,8 +481,9 @@ class EncryptionService:
             logger.error(f"Partial encryption error: {str(e)}")
             raise
 
+
     def _handle_partial_decryption(self, full_text: str, start: int, end: int,
-                                   decrypt_func, *args, **kwargs) -> str:
+                                decrypt_func, *args, **kwargs) -> str:
         """Helper method to handle partial decryption of text.
         
         Decodes the selected encrypted portion and combines it with the unencrypted parts.
@@ -490,16 +495,30 @@ class EncryptionService:
         :return: The text with the selected portion decrypted.
         """
         try:
-            # Extract and decode the encrypted portion
+            # Extract the encrypted portion
             encrypted_text = full_text[start:end]
-            try:
-                encrypted_bytes = base64.b64decode(encrypted_text)
-            except Exception as e:
-                logger.error(f"Failed to decode base64: {str(e)}")
-                raise ValueError("Invalid encrypted text format")
             
-            # Decrypt the portion
-            decrypted_bytes = decrypt_func(encrypted_bytes, *args, **kwargs)
+            # Log the encrypted text for debugging
+            logger.debug(f"Encrypted text to decrypt: {encrypted_text[:30]}... (length: {len(encrypted_text)})")
+            
+            # For ECC decrypt, which expects a base64 string directly
+            if decrypt_func == self.ecc_decrypt:
+                # Ensure we're passing a proper base64 string
+                # Some web frameworks might URL-encode the plus signs or other chars
+                cleaned_text = encrypted_text.replace(' ', '+')
+                decrypted_bytes = decrypt_func(cleaned_text, *args, **kwargs)
+            else:
+                # For other algorithms, decode from base64 first
+                try:
+                    encrypted_bytes = base64.b64decode(encrypted_text)
+                    logger.debug(f"Base64 decoded length: {len(encrypted_bytes)}")
+                except Exception as e:
+                    logger.error(f"Failed to decode base64: {str(e)}")
+                    raise ValueError("Invalid encrypted text format")
+                
+                # Decrypt the portion
+                decrypted_bytes = decrypt_func(encrypted_bytes, *args, **kwargs)
+            
             try:
                 decrypted_text = decrypted_bytes.decode('utf-8')
             except UnicodeDecodeError:
@@ -543,32 +562,36 @@ class EncryptionService:
         )
 
     def partial_ecc_encrypt(self, full_text: str, selected_text: str, start: int, end: int,
-                            public_key: str, curve: str):
+                            public_key_pem: str, curve_name: str) -> str:
         """Partially encrypt text using ECC.
         
         :param full_text: The complete text to be partially encrypted.
         :param selected_text: The portion of text to be encrypted.
         :param start: Start index of the selected portion in the full text.
         :param end: End index of the selected portion in the full text.
+        :param public_key_pem: The PEM representation of the public key.
+        :param curve_name: The name of the elliptic curve (e.g., "secp256r1").
         :return: The text with the selected portion encrypted using ECC.
         """
         return self._handle_partial_encryption(
             full_text, selected_text, start, end,
-            self.ecc_encrypt, public_key, curve
+            self.ecc_encrypt, public_key_pem, curve_name
         )
 
     def partial_ecc_decrypt(self, full_text: str, start: int, end: int,
-                            public_key: str, private_key: str, curve: str):
+                            private_key_pem: str, curve_name: str) -> str:
         """Partially decrypt text using ECC.
         
         :param full_text: The complete text to be partially decrypted.
         :param start: Start index of the encrypted portion in the full text.
         :param end: End index of the encrypted portion in the full text.
+        :param private_key_pem: The PEM representation of the private key.
+        :param curve_name: The name of the elliptic curve (e.g., "secp256r1").
         :return: The text with the selected portion decrypted using ECC.
         """
         return self._handle_partial_decryption(
             full_text, start, end,
-            self.ecc_decrypt, public_key, private_key, curve
+            self.ecc_decrypt, private_key_pem, curve_name
         )
 
     def partial_rsa_encrypt(self, full_text: str, selected_text: str, start: int, end: int,

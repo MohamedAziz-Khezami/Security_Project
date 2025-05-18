@@ -287,7 +287,7 @@ export default function FileEncryption() {
     setResult(null)
 
     try {
-      const response = await fetch("https://security-project-0h35.onrender.com/api/generate-rsa-keys", {
+      const response = await fetch("http://localhost:8000/api/generate-rsa-keys", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -337,7 +337,7 @@ export default function FileEncryption() {
 
     try {
       // Simulate API call to generate ECC keys
-      const response = await fetch("https://security-project-0h35.onrender.com/api/generate-ecc-keys", {
+      const response = await fetch("http://localhost:8000/api/generate-ecc-keys", {
         method: "POST",
         body: fdata
       })
@@ -411,7 +411,7 @@ export default function FileEncryption() {
       //formData.append("iterations", hashIterations.toString())
 
       // Simulate API call
-      const response = await fetch("https://security-project-0h35.onrender.com/api/hash", {
+      const response = await fetch("http://localhost:8000/api/hash", {
         method: "POST",
         body: formData,
       })
@@ -609,7 +609,7 @@ export default function FileEncryption() {
       }
 
       // ----- New: Send to real API -----
-      const response = await fetch("https://security-project-0h35.onrender.com/api/encrypt", {
+      const response = await fetch("http://localhost:8000/api/encrypt", {
         method: "POST",
         body: formData,
       })
