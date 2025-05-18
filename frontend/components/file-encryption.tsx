@@ -1001,8 +1001,7 @@ export default function FileEncryption() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
+            <div className="space-y-2 flex flex-col">
               <div className="flex items-center justify-between">
                 <Label htmlFor="3des-key1">Key 1</Label>
                 <Button type="button" variant="outline" size="sm" onClick={generateTripleDesKeys}>
@@ -1040,6 +1039,22 @@ export default function FileEncryption() {
                 />
               </div>
             )}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+         
+              onClick={() =>
+                navigator.clipboard.writeText(
+                  `${tripleDesKey1}${
+                    tripleDesKeyOption === "two" || tripleDesKeyOption === "three" ? ` ${tripleDesKey2}` : ''
+                  }${tripleDesKeyOption === "three" ? ` ${tripleDesKey3}` : ''}`
+                )
+              }
+            >
+              Copy All Keys
+            </Button>
 
             <div className="space-y-2">
               <Label htmlFor="3des-mode">Mode of Operation</Label>
