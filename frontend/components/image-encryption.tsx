@@ -995,7 +995,7 @@ export default function ImageEncryption() {
       // Make the API call
       console.log("Making API call to /api/image/partial-encrypt")
       try {
-        const response = await fetch("http://localhost:8000/api/image/partial-encrypt", {
+        const response = await fetch("https://security-project-0h35.onrender.com/api/image/partial-encrypt", {
           method: "POST",
           body: formData,
         })
