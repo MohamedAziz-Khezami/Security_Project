@@ -1223,6 +1223,8 @@ export default function FileEncryption() {
                   {fileType === "pdf" ? "PDF Document" : fileType === "text" ? "Text File" : "Binary File"}
                 </p>
               )}
+              <p className="text-xs text-gray-500 ">This application currently only support files of type: .txt, .md, .json, .csv, .ts, .js, .jsx, .tsx, .html, .css</p>
+
             </div>
 
             {operation !== "hash" && (
@@ -1385,7 +1387,7 @@ export default function FileEncryption() {
                       placeholder="File content will appear here..."
                     />
                     {partialEncryption && selectedText && (
-                      <div className="mt-2 p-2 bg-gray-100 rounded-md">
+                      <div className="mt-2 p-2 bg-black-100 rounded-md">
                         <p className="text-sm font-medium">Selected Text:</p>
                         <p className="text-sm font-mono break-all">
                           {selectedText.text.length > 100
