@@ -11,7 +11,7 @@ export default function Home() {
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">Secure File Encryption</h1>
           <p className="mx-auto max-w-[700px] text-gray-500 md:text-xl">
-            Encrypt and decrypt your files and images with advanced encryption algorithms.
+            Your all-in-one tool for effortless file encryption, decryption, and hashing.
           </p>
         </div>
 
