@@ -5,8 +5,14 @@
 **SecureTransfer** is a full-stack application designed to provide robust encryption and decryption services for files and images. It empowers users to securely encrypt, decrypt, and partially process files and images using a variety of cryptographic algorithms, all through a modern web interface. The platform is ideal for individuals and organizations seeking to protect sensitive data with advanced cryptographic techniques.
 
 
+
 [SecureTransfer.app](https://security-project-eta.vercel.app/)
----
+
+
+## Security Disclaimer
+
+This app is intended for educational and moderate-security use cases. For high-security or enterprise-grade environments, ensure proper key management, use of secure channels (HTTPS), and regular security audits.
+
 
 ## Key Features
 
@@ -16,6 +22,8 @@
 - **Key Generation:** Generate RSA key pairs directly from the UI.
 - **Modern UI:** Responsive, accessible, and user-friendly frontend built with Next.js and Tailwind CSS.
 - **API-first:** Well-documented FastAPI backend for easy integration and extension.
+
+(**Partial encryption** allows users to encrypt only selected sections of a file or image, ideal for scenarios where full encryption is unnecessary or when preserving partial readability is desired.)
 
 ---
 
