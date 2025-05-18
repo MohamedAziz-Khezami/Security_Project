@@ -288,7 +288,7 @@ class EncryptionService:
             
             # Derive keys based on key option
             if key_option == "one":
-                key = self._derive_key(password, salt, 64)  # 56-bit effective key size
+                key = binascii.unhexlify(key1)  # 56-bit effective key size
                 keys = [key] * 3
             elif key_option == "two":
                 if not key2:
@@ -363,8 +363,7 @@ class EncryptionService:
         try:
             if not encrypted_data:
                 raise ValueError("Encrypted data cannot be empty")
-            if not password:
-                raise ValueError("Password is required")
+   
             if not key1:
                 raise ValueError("Key1 is required")
 
@@ -377,8 +376,8 @@ class EncryptionService:
                 
                 # Derive keys based on key option
                 if key_option == "one":
-                    key = self._derive_key(password, salt, 64)
-                    keys = [key] * 3
+                    key1_bytes = binascii.unhexlify(key1)
+                    keys = key1_bytes * 3
                 elif key_option == "two":
                     if not key2:
                         raise ValueError("Second key required for 2-key mode")
@@ -416,7 +415,7 @@ class EncryptionService:
                 
                 # Derive keys based on key option
                 if key_option == "one":
-                    key = self._derive_key(password, salt, 64)
+                    key = binascii.unhexlify(key1)
                     keys = [key] * 3
                 elif key_option == "two":
                     if not key2:

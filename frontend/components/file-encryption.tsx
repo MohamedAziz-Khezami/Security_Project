@@ -1328,7 +1328,7 @@ export default function FileEncryption() {
 {operation === "hash" ? renderHashOptions() : renderAlgorithmOptions()}
 
         {/* Password field for symmetric algorithms */}
-        {operation !== "hash" && algorithm !== "rsa" && algorithm !== "ecc" && (
+        {operation !== "hash" && algorithm !== "rsa" && algorithm !== "ecc" && algorithm !== "3des" &&(
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
             <div className="relative flex">
@@ -1476,11 +1476,12 @@ export default function FileEncryption() {
                 (operation !== "hash" &&
                   algorithm === "ecc" &&
                   ((operation === "encrypt" && !eccPublicKey) || (operation === "decrypt" && !eccPrivateKey))) ||
-                (operation !== "hash" && algorithm !== "rsa" && algorithm !== "ecc" && !password) ||
+                (operation !== "hash" && algorithm !== "rsa" && algorithm !== "ecc" &&  algorithm !=="3des" && !password) ||
                 (operation !== "hash" &&
                   partialEncryption &&
                   fileType !== "binary" &&
                   (!selectedText || selectedText.text.trim() === ""))
+
               }
             >
               {isProcessing
