@@ -104,6 +104,7 @@ export default function ImageEncryption() {
   const [activeStep, setActiveStep] = useState(1)
   const [showPreview, setShowPreview] = useState(false)
   const [editingRect, setEditingRect] = useState<RectangleInput | null>(null)
+  const [showPassword, setShowPassword] = useState(false);
 
   // Algorithm-specific parameters
   const [aesKeySize, setAesKeySize] = useState("256")
@@ -1759,22 +1760,63 @@ export default function ImageEncryption() {
 
                 {/* Password field for algorithms that need it */}
                 {(algorithm === "aes" || algorithm === "chacha20") && (
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Enter your encryption/decryption password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      disabled={isProcessing}
-                    />
-                    <p className="text-xs text-gray-500">
-                      {operation === "encrypt"
-                        ? "Choose a strong password you'll remember. You'll need it to decrypt the image later."
-                        : "Enter the password you used to encrypt this image."}
-                    </p>
-                  </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <div className="relative flex">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Enter your encryption/decryption password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isProcessing}
+                className="pr-16"
+              />
+              <div className="absolute right-0 flex items-center h-full pr-2 space-x-1">
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="p-1 text-gray-500 hover:text-gray-700"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path>
+                      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path>
+                      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path>
+                      <line x1="2" x2="22" y1="2" y2="22"></line>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  )}
+                </button>
+                {password && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(password);
+                      // Optional: Add toast or notification for feedback
+                    }}
+                    className="p-1 text-gray-500 hover:text-gray-700"
+                    aria-label="Copy password"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+                      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-gray-500">
+              {operation === "encrypt"
+                ? "Choose a strong password you'll remember. You'll need it to decrypt the file later."
+                : "Enter the password you used to encrypt this file."}
+            </p>
+          </div>
                 )}
 
                 {isProcessing && (
