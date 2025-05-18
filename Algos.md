@@ -26,17 +26,15 @@ AES is a symmetric encryption algorithm that supports multiple modes of operatio
   - GCM: 12 bytes (24 hex characters)
   - CTR: 16 bytes (32 hex characters)
 
-### 2. ChaCha20
-A stream cipher that provides high-speed encryption with good security properties.
+### 2. ECC (Elliptic Curve Cryptography)  
+A public-key cryptographic system that offers high security with smaller key sizes, making it efficient for mobile and embedded devices.
 
 #### Parameters:
-- **Password**: String used to derive the encryption key
-- **Mode**:
-  - `chacha20-poly1305`: Authenticated encryption
-  - `chacha20`: Basic stream encryption
-- **Nonce**: Required for both modes
-  - chacha20-poly1305: 12 bytes (24 hex characters)
-  - chacha20: 16 bytes (32 hex characters)
+- **Private Key**: A randomly generated number used to generate the public key and decrypt messages.
+- **Public Key**: Derived from the private key and shared openly to encrypt messages or verify signatures.
+- **Curve**: Specifies the mathematical curve used (e.g., `secp256k1`, `secp256r1`)
+- **Nonce / Ephemeral Key** (used in ECDH/ECDSA): Random value used per operation to ensure forward secrecy and prevent replay attacks.
+
 
 ### 3. RSA (Rivest-Shamir-Adleman)
 An asymmetric encryption algorithm that uses public and private key pairs.

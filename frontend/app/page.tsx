@@ -1,20 +1,17 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import FileEncryption from "@/components/file-encryption";
-import { ArrowRight, FileKey, ImageIcon } from "lucide-react";
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import FileEncryption from "@/components/file-encryption"
+import { ArrowRight, FileKey, ImageIcon } from "lucide-react"
 
 export default function Home() {
   return (
     <main className="container mx-auto px-4 py-10">
       <div className="flex flex-col items-center justify-center space-y-6 text-center">
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">
-            Secure File Encryption
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tighter sm:text-4xl md:text-5xl">Secure File Encryption</h1>
           <p className="mx-auto max-w-[700px] text-gray-500 md:text-xl">
-            Encrypt and decrypt your files and images with advanced encryption
-            algorithms.
+            Encrypt and decrypt your files and images with advanced encryption algorithms.
           </p>
         </div>
 
@@ -38,8 +35,7 @@ export default function Home() {
                 <ImageIcon className="h-10 w-10 text-gray-400" />
                 <h3 className="text-lg font-medium">Image Encryption</h3>
                 <p className="text-sm text-gray-500">
-                  Go to the image encryption page to encrypt or decrypt specific
-                  parts of your images.
+                  Go to the image encryption page to encrypt or decrypt specific parts of your images.
                 </p>
                 <Link href="/image-encryption">
                   <Button className="mt-2 flex items-center gap-2">
@@ -53,5 +49,5 @@ export default function Home() {
         </div>
       </div>
     </main>
-  );
+  )
 }

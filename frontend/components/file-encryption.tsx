@@ -1,13 +1,14 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useRef } from "react"
-import dynamic from 'next/dynamic'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { AlertCircle, FileUp, Lock, Unlock, Download, Eye, Info, Key } from "lucide-react"
+import { AlertCircle, FileUp, Lock, Unlock, Download, Eye, Info, Key, Hash } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -15,70 +16,55 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Document, Page, pdfjs } from 'react-pdf'
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css'
-import 'react-pdf/dist/esm/Page/TextLayer.css'
 
-// Set up PDF.js worker with proper error handling
-try {
-  pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`
-} catch (error) {
-  console.error('Error setting up PDF.js worker:', error)
-}
-
-// Define supported file types
-const SUPPORTED_FILE_TYPES = {
-  document: ['pdf', 'docx', 'doc', 'odt', 'rtf'],
-  text: ['txt', 'json', 'csv', 'md', 'html', 'css', 'js', 'jsx', 'ts', 'tsx'],
-  spreadsheet: ['xlsx', 'xls', 'ods'],
-  presentation: ['pptx', 'ppt', 'odp'],
-  image: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'],
-  archive: ['zip', 'rar', '7z', 'tar', 'gz'],
-  binary: ['*'] // Default for unsupported types
-}
+// Import the FileEncryptionGuide component at the top of the file
+import { FileEncryptionGuide } from "./file-encryption-guide"
 
 export default function FileEncryption() {
   const [file, setFile] = useState<File | null>(null)
-  const [operation, setOperation] = useState<"encrypt" | "decrypt">("encrypt")
+  const [operation, setOperation] = useState<"encrypt" | "decrypt" | "hash">("encrypt")
   const [password, setPassword] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null)
-  const [fileType, setFileType] = useState<"document" | "text" | "spreadsheet" | "presentation" | "image" | "archive" | "binary">("binary")
+  const [result, setResult] = useState<{ success: boolean; message: string; hash?: string } | null>(null)
+  const [fileType, setFileType] = useState<"binary" | "text" | "pdf">("binary")
   const [fileContent, setFileContent] = useState<string>("")
   const [selectedText, setSelectedText] = useState<{ start: number; end: number; text: string } | null>(null)
   const [partialEncryption, setPartialEncryption] = useState(false)
   const [algorithm, setAlgorithm] = useState("aes")
   const [previewVisible, setPreviewVisible] = useState(false)
-  const [numPages, setNumPages] = useState<number | null>(null)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
-  const [pdfText, setPdfText] = useState<string[]>([])
-  const [pdfPages, setPdfPages] = useState<any[]>([])
-  const [pdfError, setPdfError] = useState<string | null>(null)
-  const [documentType, setDocumentType] = useState<"pdf" | "docx" | "other">("other")
-  const [documentError, setDocumentError] = useState<string | null>(null)
-  const [documentContent, setDocumentContent] = useState<string[]>([])
-  const [documentPages, setDocumentPages] = useState<any[]>([])
 
   // Algorithm-specific parameters
   const [aesKeySize, setAesKeySize] = useState("256")
   const [aesMode, setAesMode] = useState("gcm")
   const [aesIv, setAesIv] = useState("")
-  const [chachaMode, setChachaMode] = useState("chacha20-poly1305")
-  const [chachaNonce, setChachaNonce] = useState("")
+
+  // ECC parameters
+  const [eccCurve, setEccCurve] = useState("secp256k1")
+  const [eccPublicKey, setEccPublicKey] = useState("")
+  const [eccPrivateKey, setEccPrivateKey] = useState("")
+  const [eccKeyType, setEccKeyType] = useState<"generate" | "upload" | "paste">("generate")
+  const [eccPublicKeyFile, setEccPublicKeyFile] = useState<File | null>(null)
+  const [eccPrivateKeyFile, setEccPrivateKeyFile] = useState<File | null>(null)
+
   const [rsaKeyType, setRsaKeyType] = useState<"generate" | "upload" | "paste">("generate")
   const [rsaPublicKey, setRsaPublicKey] = useState("")
   const [rsaPrivateKey, setRsaPrivateKey] = useState("")
   const [rsaKeySize, setRsaKeySize] = useState("2048")
   const [rsaPublicKeyFile, setRsaPublicKeyFile] = useState<File | null>(null)
   const [rsaPrivateKeyFile, setRsaPrivateKeyFile] = useState<File | null>(null)
+
   const [tripleDesKeyOption, setTripleDesKeyOption] = useState("three")
   const [tripleDesKey1, setTripleDesKey1] = useState("")
   const [tripleDesKey2, setTripleDesKey2] = useState("")
   const [tripleDesKey3, setTripleDesKey3] = useState("")
   const [tripleDesIv, setTripleDesIv] = useState("")
   const [tripleDesMode, setTripleDesMode] = useState("cbc")
+
+  // Hashing parameters
+  const [hashAlgorithm, setHashAlgorithm] = useState("sha256")
+  const [hashSalt, setHashSalt] = useState("")
+  const [hashIterations, setHashIterations] = useState(1000)
 
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -92,8 +78,11 @@ export default function FileEncryption() {
     // Reset algorithm-specific fields when algorithm changes
     if (algorithm === "aes") {
       setAesIv("")
-    } else if (algorithm === "chacha20") {
-      setChachaNonce("")
+    } else if (algorithm === "ecc") {
+      setEccPublicKey("")
+      setEccPrivateKey("")
+      setEccPublicKeyFile(null)
+      setEccPrivateKeyFile(null)
     } else if (algorithm === "rsa") {
       setRsaPublicKey("")
       setRsaPrivateKey("")
@@ -108,126 +97,19 @@ export default function FileEncryption() {
   }, [algorithm])
 
   const determineFileType = (file: File) => {
-    const extension = file.name.split(".").pop()?.toLowerCase() || ""
-    
-    // Reset states
-    setDocumentError(null)
-    setDocumentContent([])
-    setDocumentPages([])
-    setFileContent("")
-    
-    // Determine file category
-    if (SUPPORTED_FILE_TYPES.document.includes(extension)) {
-      setFileType("document")
-      if (extension === "pdf") {
-        setDocumentType("pdf")
-        const url = URL.createObjectURL(file)
-        setPdfUrl(url)
-        extractDocumentText(file, "pdf")
-      } else if (extension === "docx") {
-        setDocumentType("docx")
-        extractDocumentText(file, "docx")
-      } else {
-        setDocumentType("other")
-        extractDocumentText(file, "other")
-      }
-    } else if (SUPPORTED_FILE_TYPES.text.includes(extension)) {
+    const extension = file.name.split(".").pop()?.toLowerCase()
+
+    if (extension === "pdf") {
+      setFileType("pdf")
+      simulatePdfToTextConversion(file)
+    } else if (["txt", "json", "csv", "md", "html", "css", "js", "jsx", "ts", "tsx"].includes(extension || "")) {
       setFileType("text")
       readTextFile(file)
-    } else if (SUPPORTED_FILE_TYPES.spreadsheet.includes(extension)) {
-      setFileType("spreadsheet")
-      extractDocumentText(file, "spreadsheet")
-    } else if (SUPPORTED_FILE_TYPES.presentation.includes(extension)) {
-      setFileType("presentation")
-      extractDocumentText(file, "presentation")
-    } else if (SUPPORTED_FILE_TYPES.image.includes(extension)) {
-      setFileType("image")
-      // Handle image files
-      handleImageFile(file)
-    } else if (SUPPORTED_FILE_TYPES.archive.includes(extension)) {
-      setFileType("archive")
-      // Handle archive files
-      handleArchiveFile(file)
     } else {
       setFileType("binary")
       setFileContent("")
       setPreviewVisible(false)
     }
-  }
-
-  const extractDocumentText = async (file: File, type: string) => {
-    try {
-      setDocumentError(null)
-      const arrayBuffer = await file.arrayBuffer()
-      
-      switch (type) {
-        case "pdf":
-          await extractPdfText(arrayBuffer)
-          break
-        case "docx":
-          // TODO: Add docx extraction when library is added
-          console.log("DOCX extraction will be implemented")
-          break
-        case "spreadsheet":
-          // TODO: Add spreadsheet extraction when library is added
-          console.log("Spreadsheet extraction will be implemented")
-          break
-        case "presentation":
-          // TODO: Add presentation extraction when library is added
-          console.log("Presentation extraction will be implemented")
-          break
-        default:
-          // Handle other document types
-          console.log("Other document type extraction will be implemented")
-      }
-    } catch (error) {
-      console.error('Error extracting document text:', error)
-      setDocumentError(`Failed to extract text from ${type.toUpperCase()} file. Please ensure it's a valid document.`)
-      setResult({
-        success: false,
-        message: `Failed to extract text from ${type.toUpperCase()} file. Please try another file.`
-      })
-    }
-  }
-
-  const extractPdfText = async (arrayBuffer: ArrayBuffer) => {
-    const loadingTask = pdfjs.getDocument({ data: arrayBuffer })
-    
-    // Add progress callback
-    loadingTask.onProgress = (progressData: { loaded: number; total: number }) => {
-      if (progressData.total > 0) {
-        const percent = (progressData.loaded / progressData.total) * 100
-        setProgress(Math.round(percent))
-      }
-    }
-
-    const pdf = await loadingTask.promise
-    const numPages = pdf.numPages
-    const textContent: string[] = []
-    const pages: any[] = []
-
-    for (let i = 1; i <= numPages; i++) {
-      const page = await pdf.getPage(i)
-      const text = await page.getTextContent()
-      const pageText = text.items.map((item: any) => item.str).join(' ')
-      textContent.push(pageText)
-      pages.push(page)
-    }
-
-    setPdfText(textContent)
-    setPdfPages(pages)
-    setFileContent(textContent.join('\n\n'))
-    setProgress(100)
-  }
-
-  const handleImageFile = async (file: File) => {
-    // TODO: Add image handling when library is added
-    console.log("Image handling will be implemented")
-  }
-
-  const handleArchiveFile = async (file: File) => {
-    // TODO: Add archive handling when library is added
-    console.log("Archive handling will be implemented")
   }
 
   const readTextFile = (file: File) => {
@@ -237,6 +119,20 @@ export default function FileEncryption() {
       setFileContent(content || "")
     }
     reader.readAsText(file)
+  }
+
+  const simulatePdfToTextConversion = (file: File) => {
+    // In a real app, you would use a PDF to text library
+    // Here we're simulating the conversion
+    setIsProcessing(true)
+
+    setTimeout(() => {
+      const fileName = file.name
+      setFileContent(
+        `This is the simulated text content extracted from the PDF file "${fileName}".\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.\n\nNullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl. Nullam auctor, nisl eget ultricies tincidunt, nisl nisl aliquam nisl, eget ultricies nisl nisl eget nisl.`,
+      )
+      setIsProcessing(false)
+    }, 1500)
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -269,6 +165,28 @@ export default function FileEncryption() {
     }
   }
 
+  const handleEccPublicKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setEccPublicKeyFile(e.target.files[0])
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setEccPublicKey((e.target?.result as string) || "")
+      }
+      reader.readAsText(e.target.files[0])
+    }
+  }
+
+  const handleEccPrivateKeyFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setEccPrivateKeyFile(e.target.files[0])
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setEccPrivateKey((e.target?.result as string) || "")
+      }
+      reader.readAsText(e.target.files[0])
+    }
+  }
+
   const handleTextSelection = () => {
     if (textAreaRef.current) {
       const start = textAreaRef.current.selectionStart
@@ -294,7 +212,8 @@ export default function FileEncryption() {
   }
 
   const generateTripleDesKeys = () => {
-    setTripleDesKey1(generateRandomHex(16))
+    // Generate 8 bytes (64 bits) for each key
+    setTripleDesKey1(generateRandomHex(16)) // 8 bytes = 16 hex characters
     setTripleDesKey2(generateRandomHex(16))
     setTripleDesKey3(generateRandomHex(16))
   }
@@ -302,49 +221,61 @@ export default function FileEncryption() {
   const generateIV = () => {
     if (algorithm === "aes") {
       if (aesMode === "gcm") {
+        // 12 bytes (96 bits) for GCM/CTR
         setAesIv(generateRandomHex(24))
       } else if (aesMode === "ctr") {
         setAesIv(generateRandomHex(32))
-      } else {
-        setAesIv(generateRandomHex(32))
       }
-    } else if (algorithm === "chacha20") {
-      if (chachaMode === "chacha20-poly1305") {
-        setChachaNonce(generateRandomHex(24))
-      } else {
-        setChachaNonce(generateRandomHex(32))
-      }
+      // 16 bytes (128 bits) for AES
+      else setAesIv(generateRandomHex(32))
     } else if (algorithm === "3des") {
+      // 8 bytes (64 bits) for 3DES
       setTripleDesIv(generateRandomHex(16))
     }
   }
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages)
-  }
-
-  const handlePdfPageChange = (pageNumber: number) => {
-    if (pageNumber >= 1 && pageNumber <= (numPages || 1)) {
-      setCurrentPage(pageNumber)
-    }
-  }
-
   const downloadRSAKeys = (publicKey: string, privateKey: string) => {
-    const publicKeyBlob = new Blob([publicKey], { type: 'text/plain' })
+    // Download public key
+    const publicKeyBlob = new Blob([publicKey], { type: "text/plain" })
     const publicKeyUrl = URL.createObjectURL(publicKeyBlob)
-    const publicKeyLink = document.createElement('a')
+    const publicKeyLink = document.createElement("a")
     publicKeyLink.href = publicKeyUrl
-    publicKeyLink.download = 'public_key.pem'
+    publicKeyLink.download = "public_key.pem"
     document.body.appendChild(publicKeyLink)
     publicKeyLink.click()
     document.body.removeChild(publicKeyLink)
     URL.revokeObjectURL(publicKeyUrl)
 
-    const privateKeyBlob = new Blob([privateKey], { type: 'text/plain' })
+    // Download private key
+    const privateKeyBlob = new Blob([privateKey], { type: "text/plain" })
     const privateKeyUrl = URL.createObjectURL(privateKeyBlob)
-    const privateKeyLink = document.createElement('a')
+    const privateKeyLink = document.createElement("a")
     privateKeyLink.href = privateKeyUrl
-    privateKeyLink.download = 'private_key.pem'
+    privateKeyLink.download = "private_key.pem"
+    document.body.appendChild(privateKeyLink)
+    privateKeyLink.click()
+    document.body.removeChild(privateKeyLink)
+    URL.revokeObjectURL(privateKeyUrl)
+  }
+
+  const downloadECCKeys = (publicKey: string, privateKey: string) => {
+    // Download public key
+    const publicKeyBlob = new Blob([publicKey], { type: "text/plain" })
+    const publicKeyUrl = URL.createObjectURL(publicKeyBlob)
+    const publicKeyLink = document.createElement("a")
+    publicKeyLink.href = publicKeyUrl
+    publicKeyLink.download = "ecc_public_key.pem"
+    document.body.appendChild(publicKeyLink)
+    publicKeyLink.click()
+    document.body.removeChild(publicKeyLink)
+    URL.revokeObjectURL(publicKeyUrl)
+
+    // Download private key
+    const privateKeyBlob = new Blob([privateKey], { type: "text/plain" })
+    const privateKeyUrl = URL.createObjectURL(privateKeyBlob)
+    const privateKeyLink = document.createElement("a")
+    privateKeyLink.href = privateKeyUrl
+    privateKeyLink.download = "ecc_private_key.pem"
     document.body.appendChild(privateKeyLink)
     privateKeyLink.click()
     document.body.removeChild(privateKeyLink)
@@ -356,37 +287,153 @@ export default function FileEncryption() {
     setResult(null)
 
     try {
-      const response = await fetch('https://security-project-km7v.onrender.com/api/generate-rsa-keys', {
-        method: 'POST',
+      const response = await fetch("http://localhost:8000/api/generate-rsa-keys", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          keySize: parseInt(rsaKeySize)
-        })
+          keySize: Number.parseInt(rsaKeySize),
+        }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to generate RSA keys')
+        throw new Error("Failed to generate RSA keys")
       }
 
       const data = await response.json()
-      
+
       setRsaPublicKey(data.public_key)
       setRsaPrivateKey(data.private_key)
-      
+
+      // Download the keys automatically
       downloadRSAKeys(data.public_key, data.private_key)
-      
+
       setResult({
         success: true,
-        message: "RSA key pair generated and downloaded successfully. Make sure to save your private key securely."
+        message: "RSA key pair generated and downloaded successfully. Make sure to save your private key securely.",
       })
-
     } catch (error) {
-      console.error('Error generating RSA keys:', error)
+      console.error("Error generating RSA keys:", error)
       setResult({
         success: false,
-        message: "Failed to generate RSA keys. Please try again."
+        message: "Failed to generate RSA keys. Please try again.",
+      })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const simulateEccKeyGeneration = async () => {
+    setIsProcessing(true)
+    setResult(null)
+ 
+    const fdata = new FormData()
+    fdata.append("curve", eccCurve)
+
+
+    console.log("Form data contents:")
+    console.log(fdata)
+
+    try {
+      // Simulate API call to generate ECC keys
+      const response = await fetch("http://localhost:8000/api/generate-ecc-keys", {
+        method: "POST",
+        body: fdata
+      })
+      if (!response.ok) {
+        throw new Error("Failed to generate ECC keys")
+      }
+
+      const data = await response.json()
+
+      const publicKey = data.public_key
+      const privateKey = data.private_key
+
+      setTimeout(() => {
+        // Simulate key generation delay
+        setIsProcessing(false)
+        setResult({
+          success: true,
+          message: "ECC key pair generated and downloaded successfully. Make sure to save your private key securely.",
+      })
+        setEccPublicKey(publicKey)
+        setEccPrivateKey(privateKey)
+
+        // Download the keys automatically
+        downloadECCKeys(publicKey, privateKey)
+
+        setResult({
+          success: true,
+          message: "ECC key pair generated and downloaded successfully. Make sure to save your private key securely.",
+        })
+        setIsProcessing(false)
+      }, 1500)
+    } catch (error) {
+      console.error("Error generating ECC keys:", error)
+      setResult({
+        success: false,
+        message: "Failed to generate ECC keys. Please try again.",
+      })
+      setIsProcessing(false)
+    }
+  }
+
+  const handleHashFile = async () => {
+    if (!file) {
+      setResult({
+        success: false,
+        message: "Please select a file to hash.",
+      })
+      return
+    }
+
+    setIsProcessing(true)
+    setProgress(0)
+
+    // Simulate progress
+    const interval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 95) {
+          clearInterval(interval)
+          return prev
+        }
+        return prev + 5
+      })
+    }, 100)
+
+    try {
+      // Create FormData for the request
+      const formData = new FormData()
+      formData.append("file", file)
+      formData.append("algorithm", hashAlgorithm)
+      //formData.append("salt", hashSalt)
+      //formData.append("iterations", hashIterations.toString())
+
+      // Simulate API call
+      const response = await fetch("http://localhost:8000/api/hash", {
+        method: "POST",
+        body: formData,
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to hash file")
+      }
+
+      clearInterval(interval)
+      setProgress(100)
+      setResult({
+        success: true,
+        message: "File hashed successfully!",
+        hash: data.hash,
+      })
+    } catch (error) {
+      clearInterval(interval)
+      setProgress(0)
+      setResult({
+        success: false,
+        message: "Failed to hash file. Please try again.",
       })
     } finally {
       setIsProcessing(false)
@@ -396,6 +443,12 @@ export default function FileEncryption() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (operation === "hash") {
+      handleHashFile()
+      return
+    }
+
+    // Validate inputs based on selected algorithm
     if (!file) {
       setResult({
         success: false,
@@ -404,6 +457,7 @@ export default function FileEncryption() {
       return
     }
 
+    // Algorithm-specific validation
     if (algorithm === "rsa") {
       if (operation === "encrypt" && !rsaPublicKey) {
         setResult({
@@ -416,6 +470,21 @@ export default function FileEncryption() {
         setResult({
           success: false,
           message: "Please provide a private key for RSA decryption.",
+        })
+        return
+      }
+    } else if (algorithm === "ecc") {
+      if (operation === "encrypt" && !eccPublicKey) {
+        setResult({
+          success: false,
+          message: "Please provide a public key for ECC encryption.",
+        })
+        return
+      }
+      if (operation === "decrypt" && !eccPrivateKey) {
+        setResult({
+          success: false,
+          message: "Please provide a private key for ECC decryption.",
         })
         return
       }
@@ -441,7 +510,7 @@ export default function FileEncryption() {
         })
         return
       }
-    } else if (algorithm !== "rsa" && !password) {
+    } else if (algorithm !== "rsa" && algorithm !== "ecc" && !password) {
       setResult({
         success: false,
         message: "Please enter a password.",
@@ -460,6 +529,7 @@ export default function FileEncryption() {
     setIsProcessing(true)
     setProgress(0)
 
+    // Simulate progress
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 95) {
@@ -471,11 +541,14 @@ export default function FileEncryption() {
     }, 100)
 
     try {
+      // In a real app, you would send the file to your FastAPI backend
+      // This is a placeholder for the API call
       const formData = new FormData()
       formData.append("file", file)
       formData.append("operation", operation)
       formData.append("algorithm", algorithm)
 
+      // Add algorithm-specific parameters
       if (algorithm === "aes") {
         formData.append("password", password)
         formData.append("keySize", aesKeySize)
@@ -483,10 +556,13 @@ export default function FileEncryption() {
         if (aesMode !== "ecb") {
           formData.append("iv", aesIv)
         }
-      } else if (algorithm === "chacha20") {
-        formData.append("password", password)
-        formData.append("mode", chachaMode)
-        formData.append("nonce", chachaNonce)
+      } else if (algorithm === "ecc") {
+        if (operation === "encrypt") {
+          formData.append("publicKey", eccPublicKey)
+        } else {
+          formData.append("privateKey", eccPrivateKey)
+        }
+        formData.append("curve", eccCurve)
       } else if (algorithm === "rsa") {
         if (operation === "encrypt") {
           formData.append("publicKey", rsaPublicKey)
@@ -495,7 +571,7 @@ export default function FileEncryption() {
         }
       } else if (algorithm === "3des") {
         formData.append("password", password)
-        formData.append("keySize", "192")
+        formData.append("keySize", "192") // Triple DES uses 192-bit keys (3 x 64 bits)
         formData.append("mode", tripleDesMode)
         formData.append("keyOption", tripleDesKeyOption)
         formData.append("key1", tripleDesKey1)
@@ -517,6 +593,7 @@ export default function FileEncryption() {
         formData.append("selectedText", selectedText.text)
       }
 
+      // Add file content
       if (file) {
         if (fileType === "text" || fileType === "pdf") {
           formData.append("plaintext", fileContent)
@@ -526,8 +603,14 @@ export default function FileEncryption() {
         }
       }
 
-      const response = await fetch('https://security-project-km7v.onrender.com/api/encrypt', {
-        method: 'POST',
+      console.log("Form data contents:")
+      for (const pair of formData.entries()) {
+        console.log(pair[0] + ": " + pair[1])
+      }
+
+      // ----- New: Send to real API -----
+      const response = await fetch("http://localhost:8000/api/encrypt", {
+        method: "POST",
         body: formData,
       })
       const data = await response.json()
@@ -536,6 +619,7 @@ export default function FileEncryption() {
       setProgress(100)
 
       if (data.message === "Success") {
+        // If partial, update content
         if (partialEncryption && fileType !== "binary" && selectedText) {
           const prefix = fileContent.substring(0, selectedText.start)
           const suffix = fileContent.substring(selectedText.end)
@@ -548,9 +632,8 @@ export default function FileEncryption() {
         })
 
         setFileContent(data.data)
-
       } else {
-        setResult({ success: false, message: data.message || 'Operation failed.' })
+        setResult({ success: false, message: data.message || "Operation failed." })
       }
     } catch (error) {
       clearInterval(interval)
@@ -563,19 +646,11 @@ export default function FileEncryption() {
 
   const handleDownload = () => {
     if (result && result.success) {
-      let content = fileContent
-      let filename = file ? file.name : "encrypted_file"
-      
-      if (fileType === "document") {
-        content = documentContent.join('\n\n')
-        filename = filename.replace(/\.[^/.]+$/, '_extracted.txt')
-      }
-      
-      const blob = new Blob([content], { type: "text/plain" })
+      const blob = new Blob([fileContent], { type: "application/octet-stream" })
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = filename
+      a.download = file ? file.name : "encrypted_file"
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -583,12 +658,22 @@ export default function FileEncryption() {
     }
   }
 
+  const copyHashToClipboard = () => {
+    if (result?.hash) {
+      navigator.clipboard.writeText(result.hash)
+      setResult({
+        ...result,
+        message: "Hash copied to clipboard!",
+      })
+    }
+  }
+
   const getAlgorithmDescription = () => {
     switch (algorithm) {
       case "aes":
         return "AES (Advanced Encryption Standard) - Symmetric block cipher with key sizes of 128, 192, or 256 bits."
-      case "chacha20":
-        return "ChaCha20 - High-speed stream cipher designed for software implementation without special hardware."
+      case "ecc":
+        return "ECC (Elliptic Curve Cryptography) - Asymmetric encryption using elliptic curves for enhanced security with smaller key sizes."
       case "rsa":
         return "RSA - Asymmetric encryption algorithm using public/private key pairs for secure communication."
       case "3des":
@@ -658,40 +743,124 @@ export default function FileEncryption() {
           </div>
         )
 
-      case "chacha20":
+      case "ecc":
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="chacha-mode">Variant</Label>
-              <Select value={chachaMode} onValueChange={setChachaMode}>
-                <SelectTrigger id="chacha-mode">
-                  <SelectValue placeholder="Select variant" />
+              <Label htmlFor="ecc-curve">Elliptic Curve</Label>
+              <Select value={eccCurve} onValueChange={setEccCurve}>
+                <SelectTrigger id="ecc-curve">
+                  <SelectValue placeholder="Select curve" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="chacha20">ChaCha20 (Original)</SelectItem>
-                  <SelectItem value="chacha20-poly1305">ChaCha20-Poly1305 (Authenticated)</SelectItem>
+                  <SelectItem value="secp256k1">secp256k1 (Used in Bitcoin)</SelectItem>
+                  <SelectItem value="secp256r1">secp256r1 (NIST P-256) - NIST standard</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-gray-500">
+                Curve25519 offers excellent security and performance and is resistant to timing attacks.
+              </p>
             </div>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="chacha-nonce">Nonce</Label>
-                <Button type="button" variant="outline" size="sm" onClick={generateIV}>
-                  Generate Random
-                </Button>
-              </div>
-              <Input
-                id="chacha-nonce"
-                value={chachaNonce}
-                onChange={(e) => setChachaNonce(e.target.value)}
-                placeholder="Enter nonce (hex format)"
-              />
-              <p className="text-xs text-gray-500">
-                {chachaMode === "chacha20-poly1305"
-                  ? "96-bit nonce (12 bytes) for ChaCha20-Poly1305"
-                  : "64-bit nonce (8 bytes) for original ChaCha20"}
-              </p>
+              <Label>Key Management</Label>
+              <Tabs value={eccKeyType} onValueChange={(value: any) => setEccKeyType(value as any)}>
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="generate">Generate Keys</TabsTrigger>
+                  <TabsTrigger value="upload">Upload Keys</TabsTrigger>
+                  <TabsTrigger value="paste">Paste Keys</TabsTrigger>
+                </TabsList>
+                <TabsContent value="generate" className="space-y-4">
+                  <Button type="button" onClick={simulateEccKeyGeneration} disabled={isProcessing} className="w-full">
+                    {isProcessing ? "Generating..." : "Generate ECC Key Pair"}
+                  </Button>
+                  {(eccPublicKey || eccPrivateKey) && (
+                    <Alert>
+                      <AlertTitle className="flex items-center gap-2">
+                        <Key className="h-4 w-4" />
+                        Keys Generated
+                      </AlertTitle>
+                      <AlertDescription>
+                        ECC key pair has been generated and downloaded. Make sure to save your private key securely.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </TabsContent>
+                <TabsContent value="upload" className="space-y-4">
+                  {operation === "encrypt" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="ecc-public-key-file">Public Key (for encryption)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="ecc-public-key-file"
+                          type="file"
+                          accept=".pem,.key,.pub"
+                          onChange={handleEccPublicKeyFileChange}
+                          className="cursor-pointer"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => document.getElementById("ecc-public-key-file")?.click()}
+                        >
+                          Browse
+                        </Button>
+                      </div>
+                      {eccPublicKeyFile && <p className="text-sm text-gray-500">Selected: {eccPublicKeyFile.name}</p>}
+                    </div>
+                  ) : null}
+
+                  {operation === "decrypt" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="ecc-private-key-file">Private Key (for decryption)</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id="ecc-private-key-file"
+                          type="file"
+                          accept=".pem,.key"
+                          onChange={handleEccPrivateKeyFileChange}
+                          className="cursor-pointer"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => document.getElementById("ecc-private-key-file")?.click()}
+                        >
+                          Browse
+                        </Button>
+                      </div>
+                      {eccPrivateKeyFile && <p className="text-sm text-gray-500">Selected: {eccPrivateKeyFile.name}</p>}
+                    </div>
+                  ) : null}
+                </TabsContent>
+                <TabsContent value="paste" className="space-y-4">
+                  {operation === "encrypt" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="ecc-public-key">Public Key (for encryption)</Label>
+                      <Textarea
+                        id="ecc-public-key"
+                        value={eccPublicKey}
+                        onChange={(e) => setEccPublicKey(e.target.value)}
+                        placeholder="Paste PEM-formatted public key here"
+                        className="font-mono text-xs h-32"
+                      />
+                    </div>
+                  ) : null}
+
+                  {operation === "decrypt" ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="ecc-private-key">Private Key (for decryption)</Label>
+                      <Textarea
+                        id="ecc-private-key"
+                        value={eccPrivateKey}
+                        onChange={(e) => setEccPrivateKey(e.target.value)}
+                        placeholder="Paste PEM-formatted private key here"
+                        className="font-mono text-xs h-32"
+                      />
+                    </div>
+                  ) : null}
+                </TabsContent>
+              </Tabs>
             </div>
           </div>
         )
@@ -720,12 +889,7 @@ export default function FileEncryption() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button 
-                    type="button" 
-                    onClick={simulateRsaKeyGeneration} 
-                    disabled={isProcessing} 
-                    className="w-full"
-                  >
+                  <Button type="button" onClick={simulateRsaKeyGeneration} disabled={isProcessing} className="w-full">
                     {isProcessing ? "Generating..." : "Generate Key Pair"}
                   </Button>
                   {(rsaPublicKey || rsaPrivateKey) && (
@@ -741,7 +905,7 @@ export default function FileEncryption() {
                   )}
                 </TabsContent>
                 <TabsContent value="upload" className="space-y-4">
-                  {operation === "encrypt"  ? (
+                  {operation === "encrypt" ? (
                     <div className="space-y-2">
                       <Label htmlFor="rsa-public-key-file">Public Key (for encryption)</Label>
                       <div className="flex items-center gap-2">
@@ -764,7 +928,7 @@ export default function FileEncryption() {
                     </div>
                   ) : null}
 
-                  {operation === "decrypt"  ? (
+                  {operation === "decrypt" ? (
                     <div className="space-y-2">
                       <Label htmlFor="rsa-private-key-file">Private Key (for decryption)</Label>
                       <div className="flex items-center gap-2">
@@ -788,7 +952,7 @@ export default function FileEncryption() {
                   ) : null}
                 </TabsContent>
                 <TabsContent value="paste" className="space-y-4">
-                  {operation === "encrypt"  ? (
+                  {operation === "encrypt" ? (
                     <div className="space-y-2">
                       <Label htmlFor="rsa-public-key">Public Key (for encryption)</Label>
                       <Textarea
@@ -801,7 +965,7 @@ export default function FileEncryption() {
                     </div>
                   ) : null}
 
-                  {operation === "decrypt"  ? (
+                  {operation === "decrypt" ? (
                     <div className="space-y-2">
                       <Label htmlFor="rsa-private-key">Private Key (for decryption)</Label>
                       <Textarea
@@ -913,15 +1077,91 @@ export default function FileEncryption() {
     }
   }
 
+  const renderHashOptions = () => {
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="hash-algorithm">Hash Algorithm</Label>
+          <Select value={hashAlgorithm} onValueChange={setHashAlgorithm}>
+            <SelectTrigger id="hash-algorithm">
+              <SelectValue placeholder="Select hash algorithm" />
+            </SelectTrigger>
+            <SelectContent>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="relative w-full">
+                      <SelectItem value="sha256">SHA-256 (Secure Hash Algorithm 256-bit)</SelectItem>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    <p>
+                      SHA-256 is part of the SHA-2 family, producing a 256-bit (32-byte) hash value. Widely used in
+                      security applications, digital signatures, and blockchain technology.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="relative w-full">
+                      <SelectItem value="blake3">BLAKE3 (High-performance cryptographic hash)</SelectItem>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="max-w-xs">
+                    <p>
+                      BLAKE3 is a modern cryptographic hash function that is much faster than MD5, SHA-1, SHA-2, and
+                      SHA-3, while maintaining high security. Ideal for high-performance applications.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-gray-500">
+            {hashAlgorithm === "sha256"
+              ? "SHA-256 is a widely used cryptographic hash function that produces a 256-bit (32-byte) hash value."
+              : "BLAKE3 is a cryptographic hash function that is much faster than MD5, SHA-1, SHA-2, and SHA-3, yet is at least as secure as the latest standard SHA-3."}
+          </p>
+        </div>
+
+
+
+        {result?.hash && (
+          <div className="space-y-2">
+            <Label htmlFor="hash-result">Hash Result</Label>
+            <div className="flex items-center gap-2">
+              <Input id="hash-result" value={result.hash} readOnly className="font-mono text-xs" />
+              <Button type="button" variant="outline" size="sm" onClick={copyHashToClipboard}>
+                Copy
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>File {operation === "encrypt" ? "Encryption" : "Decryption"}</CardTitle>
-        <CardDescription>
-          {operation === "encrypt"
-            ? "Secure your files with strong encryption"
-            : "Decrypt your previously encrypted files"}
-        </CardDescription>
+        <div className="flex flex-col space-y-2">
+          <div className="flex items-center justify-between">
+            <CardTitle>
+              File {operation === "encrypt" ? "Encryption" : operation === "decrypt" ? "Decryption" : "Hashing"}
+            </CardTitle>
+            <FileEncryptionGuide />
+          </div>
+          <CardDescription>
+            {operation === "encrypt"
+              ? "Secure your files with strong encryption"
+              : operation === "decrypt"
+                ? "Decrypt your previously encrypted files"
+                : "Generate cryptographic hash of your files"}
+          </CardDescription>
+        </div>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit}>
@@ -931,7 +1171,7 @@ export default function FileEncryption() {
               <RadioGroup
                 value={operation}
                 onValueChange={(value: any) => {
-                  setOperation(value as "encrypt" | "decrypt")
+                  setOperation(value as "encrypt" | "decrypt" | "hash")
                   setResult(null)
                 }}
                 className="flex space-x-4"
@@ -948,35 +1188,13 @@ export default function FileEncryption() {
                     <Unlock className="h-4 w-4" /> Decrypt
                   </Label>
                 </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="hash" id="hash" />
+                  <Label htmlFor="hash" className="flex items-center gap-1 cursor-pointer">
+                    <Hash className="h-4 w-4" /> Hash
+                  </Label>
+                </div>
               </RadioGroup>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="algorithm">Encryption Algorithm</Label>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400 cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-sm">
-                      <p>{getAlgorithmDescription()}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-              <Select value={algorithm} onValueChange={setAlgorithm}>
-                <SelectTrigger id="algorithm">
-                  <SelectValue placeholder="Select algorithm" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="aes">AES</SelectItem>
-                  <SelectItem value="chacha20">ChaCha20</SelectItem>
-                  <SelectItem value="rsa">RSA</SelectItem>
-                  <SelectItem value="3des">Triple DES</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-gray-500">{getAlgorithmDescription()}</p>
             </div>
 
             <div className="space-y-2">
@@ -1007,9 +1225,107 @@ export default function FileEncryption() {
               )}
             </div>
 
-            {renderAlgorithmOptions()}
+            {operation !== "hash" && (
 
-            {algorithm !== "rsa" && (
+
+        
+
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="algorithm">Encryption Algorithm</Label>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-4 w-4 text-gray-400 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm">
+                        <p>{getAlgorithmDescription()}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <Select value={algorithm} onValueChange={setAlgorithm}>
+                  <SelectTrigger id="algorithm">
+                    <SelectValue placeholder="Select algorithm" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="relative w-full">
+                            <SelectItem value="aes">AES</SelectItem>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p>
+                            Advanced Encryption Standard - Fast, secure symmetric encryption with 128/192/256-bit keys.
+                            Widely used for sensitive data.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="relative w-full">
+                            <SelectItem value="ecc">ECC</SelectItem>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p>
+                            Elliptic Curve Cryptography - Asymmetric encryption using smaller keys than RSA while
+                            maintaining security. Ideal for resource-constrained systems.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="relative w-full">
+                            <SelectItem value="rsa">RSA</SelectItem>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p>
+                            RSA - Classic asymmetric encryption using public/private key pairs. Good for secure
+                            communications and digital signatures.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="relative w-full">
+                            <SelectItem value="3des">Triple DES</SelectItem>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" className="max-w-xs">
+                          <p>
+                            Triple DES - Applies DES cipher three times to each data block. Legacy algorithm still used
+                            in financial services.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">{getAlgorithmDescription()}</p>
+              </div>
+            )}
+
+
+
+            {/* Algorithm-specific options or hash options */}
+            {operation === "hash" ? renderHashOptions() : renderAlgorithmOptions()}
+
+            {/* Password field for symmetric algorithms */}
+            {operation !== "hash" && algorithm !== "rsa" && algorithm !== "ecc" && (
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
@@ -1028,7 +1344,7 @@ export default function FileEncryption() {
               </div>
             )}
 
-            {(fileType === "text" || fileType === "pdf") && file && (
+            {operation !== "hash" && (fileType === "text" || fileType === "pdf") && file && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="partial-encryption">Partial Encryption</Label>
@@ -1046,115 +1362,28 @@ export default function FileEncryption() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <Label>File Preview</Label>
-                  <div className="flex items-center gap-2">
-                    {fileType === "pdf" && (
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePdfPageChange(currentPage - 1)}
-                          disabled={currentPage <= 1}
-                        >
-                          Previous
-                        </Button>
-                        <span className="text-sm">
-                          Page {currentPage} of {numPages || 1}
-                        </span>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handlePdfPageChange(currentPage + 1)}
-                          disabled={currentPage >= (numPages || 1)}
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPreviewVisible(!previewVisible)}
-                      className="flex items-center gap-1"
-                    >
-                      <Eye className="h-4 w-4" />
-                      {previewVisible ? "Hide Preview" : "Show Preview"}
-                    </Button>
-                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPreviewVisible(!previewVisible)}
+                    className="flex items-center gap-1"
+                  >
+                    <Eye className="h-4 w-4" />
+                    {previewVisible ? "Hide Preview" : "Show Preview"}
+                  </Button>
                 </div>
 
                 {previewVisible && (
                   <div className="border rounded-md p-2">
-                    {fileType === "document" && pdfUrl ? (
-                      <div className="max-h-[500px] overflow-auto">
-                        {documentError ? (
-                          <Alert variant="destructive" className="mb-4">
-                            <AlertCircle className="h-4 w-4" />
-                            <AlertTitle>Error</AlertTitle>
-                            <AlertDescription>{documentError}</AlertDescription>
-                          </Alert>
-                        ) : (
-                          <>
-                            {documentType === "pdf" && (
-                              <Document
-                                file={pdfUrl}
-                                onLoadSuccess={onDocumentLoadSuccess}
-                                onLoadError={(error) => {
-                                  console.error('Error loading PDF:', error)
-                                  setDocumentError("Failed to load PDF file. Please try another file.")
-                                }}
-                                loading={
-                                  <div className="flex items-center justify-center p-4">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                                  </div>
-                                }
-                                className="flex flex-col items-center"
-                              >
-                                <Page
-                                  pageNumber={currentPage}
-                                  renderTextLayer={true}
-                                  renderAnnotationLayer={true}
-                                  className="max-w-full"
-                                  loading={
-                                    <div className="flex items-center justify-center p-4">
-                                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
-                                    </div>
-                                  }
-                                />
-                              </Document>
-                            )}
-                            {partialEncryption && !documentError && (
-                              <div className="mt-4">
-                                <Textarea
-                                  ref={textAreaRef}
-                                  value={documentContent[currentPage - 1] || ''}
-                                  onChange={(e) => {
-                                    const newContent = [...documentContent]
-                                    newContent[currentPage - 1] = e.target.value
-                                    setDocumentContent(newContent)
-                                    setFileContent(newContent.join('\n\n'))
-                                  }}
-                                  onSelect={handleTextSelection}
-                                  className="min-h-[100px] font-mono text-sm"
-                                  placeholder="Document text content..."
-                                />
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <Textarea
-                        ref={textAreaRef}
-                        value={fileContent}
-                        onChange={(e) => setFileContent(e.target.value)}
-                        onSelect={handleTextSelection}
-                        className="min-h-[200px] font-mono text-sm"
-                        placeholder="File content will appear here..."
-                      />
-                    )}
+                    <Textarea
+                      ref={textAreaRef}
+                      value={fileContent}
+                      onChange={(e) => setFileContent(e.target.value)}
+                      onSelect={handleTextSelection}
+                      className="min-h-[200px] font-mono text-sm"
+                      placeholder="File content will appear here..."
+                    />
                     {partialEncryption && selectedText && (
                       <div className="mt-2 p-2 bg-gray-100 rounded-md">
                         <p className="text-sm font-medium">Selected Text:</p>
@@ -1197,22 +1426,30 @@ export default function FileEncryption() {
               disabled={
                 !file ||
                 isProcessing ||
-                (algorithm === "rsa" &&
+                (operation !== "hash" &&
+                  algorithm === "rsa" &&
                   ((operation === "encrypt" && !rsaPublicKey) || (operation === "decrypt" && !rsaPrivateKey))) ||
-                (algorithm !== "rsa" && !password) ||
-                (partialEncryption && fileType !== "binary" && (!selectedText || selectedText.text.trim() === ""))
+                (operation !== "hash" &&
+                  algorithm === "ecc" &&
+                  ((operation === "encrypt" && !eccPublicKey) || (operation === "decrypt" && !eccPrivateKey))) ||
+                (operation !== "hash" && algorithm !== "rsa" && algorithm !== "ecc" && !password) ||
+                (operation !== "hash" &&
+                  partialEncryption &&
+                  fileType !== "binary" &&
+                  (!selectedText || selectedText.text.trim() === ""))
               }
             >
-              {isProcessing ? "Processing..." : operation === "encrypt" ? "Encrypt File" : "Decrypt File"}
+              {isProcessing
+                ? "Processing..."
+                : operation === "encrypt"
+                  ? "Encrypt File"
+                  : operation === "decrypt"
+                    ? "Decrypt File"
+                    : "Hash File"}
             </Button>
 
-            {(fileType === "text" || fileType === "pdf") && fileContent && result?.success && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDownload}
-                className="flex items-center gap-2"
-              >
+            {operation !== "hash" && (fileType === "text" || fileType === "pdf") && fileContent && result?.success && (
+              <Button type="button" variant="outline" onClick={handleDownload} className="flex items-center gap-2">
                 <Download className="h-4 w-4" />
                 Download Result
               </Button>
@@ -1222,8 +1459,8 @@ export default function FileEncryption() {
       </CardContent>
       <CardFooter className="flex justify-center border-t pt-6">
         <p className="text-xs text-gray-500 text-center max-w-md">
-          All encryption and decryption is performed securely. Your files are never stored on our servers and are
-          processed locally through our secure API.
+          All encryption, decryption, and hashing is performed securely. Your files are never stored on our servers and
+          are processed locally through our secure API.
         </p>
       </CardFooter>
     </Card>

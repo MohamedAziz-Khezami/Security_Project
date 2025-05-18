@@ -8,7 +8,7 @@
 
 ## Key Features
 
-- **File Encryption/Decryption:** Supports AES, ChaCha20, RSA, 3DES, and more.
+- **File Encryption/Decryption:** Supports AES, ECC, RSA, 3DES, and more.
 - **Partial Encryption:** Encrypt or decrypt only selected regions of text files or images.
 - **Image Encryption:** Advanced image encryption with region selection and multiple algorithms.
 - **Key Generation:** Generate RSA key pairs directly from the UI.
@@ -39,7 +39,7 @@
 
 ---
 
-# Backend: FastAPI App (`fastapi_app`)
+# Backend: FastAPI App (`backend`)
 
 ## Tech Stack
 
@@ -55,7 +55,7 @@
 ## Directory Structure
 
 ```
-fastapi_app/
+backend/
 ├── requirements.txt
 └── app/
     ├── main.py              # FastAPI entry point
@@ -75,7 +75,7 @@ fastapi_app/
 1. **Clone the repository:**
    ```bash
    git clone <repo-url>
-   cd Security_Project/fastapi_app
+   cd Security_Project/backend
    ```
 
 2. **Create a virtual environment:**
@@ -93,12 +93,8 @@ fastapi_app/
 
 - **Environment Variables:**  
   The backend uses Pydantic settings (see `core/config.py`).  
-  You can create a `.env` file in `fastapi_app/` to override defaults:
-  ```
-  API_V1_STR=/api/v1
-  PROJECT_NAME=SecureTransfer API
-  # ...other settings as needed
-  ```
+  You can create a `.env` file in `backend/` to override defaults:
+
 
 ## API Documentation
 
@@ -108,19 +104,12 @@ fastapi_app/
 - **Key Endpoints:**
   - `POST /api/encrypt` — Encrypt or decrypt files (supports partial encryption).
   - `POST /api/generate-rsa-keys` — Generate RSA key pairs.
-  - `POST /api/image/process` — Encrypt/decrypt images.
   - `POST /api/image/partial-encrypt` — Partial image encryption/decryption.
-  - `POST /api/image/auto-decrypt` — Auto-decrypt images.
+
 
   See `app/api/routes.py` for full details.
 
-## Testing & Linting
 
-- **Testing:**  
-  _No test suite detected. Add tests using `pytest` or similar for production use._
-
-- **Linting:**  
-  _No linter config detected. Recommended: `flake8`, `black`, or `ruff`._
 
 ## Running the Backend
 
@@ -213,9 +202,7 @@ frontend/
   npm run lint
   ```
 
-## Testing
 
-- _No test suite detected. Add tests using Jest, React Testing Library, or Cypress for production use._
 
 ---
 
@@ -225,7 +212,7 @@ frontend/
 
 1. **Start the backend:**
    ```bash
-   cd Security_Project/fastapi_app
+   cd Security_Project/backend
    uvicorn app.main:app --reload
    ```
 
